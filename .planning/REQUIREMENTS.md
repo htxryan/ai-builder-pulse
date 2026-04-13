@@ -84,36 +84,36 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INGEST-01 | Pending | Pending |
-| INGEST-02 | Pending | Pending |
-| INGEST-03 | Pending | Pending |
-| INGEST-04 | Pending | Pending |
-| INGEST-05 | Pending | Pending |
-| INGEST-06 | Pending | Pending |
-| CURATE-01 | Pending | Pending |
-| CURATE-02 | Pending | Pending |
-| CURATE-03 | Pending | Pending |
-| CURATE-04 | Pending | Pending |
-| CURATE-05 | Pending | Pending |
-| LINK-01 | Pending | Pending |
-| LINK-02 | Pending | Pending |
-| LINK-03 | Pending | Pending |
-| PUB-01 | Pending | Pending |
-| PUB-02 | Pending | Pending |
-| PUB-03 | Pending | Pending |
-| PUB-04 | Pending | Pending |
-| AUTO-01 | Pending | Pending |
-| AUTO-02 | Pending | Pending |
-| AUTO-03 | Pending | Pending |
-| AUTO-04 | Pending | Pending |
-| PERSIST-01 | Pending | Pending |
-| PERSIST-02 | Pending | Pending |
+| INGEST-01 | Phase 2 | Pending |
+| INGEST-02 | Phase 2 | Pending |
+| INGEST-03 | Phase 2 | Pending |
+| INGEST-04 | Phase 2 | Pending |
+| INGEST-05 | Phase 2 | Pending |
+| INGEST-06 | Phase 2 | Pending |
+| CURATE-01 | Phase 3 | Pending |
+| CURATE-02 | Phase 3 | Pending |
+| CURATE-03 | Phase 3 | Pending |
+| CURATE-04 | Phase 3 | Pending |
+| CURATE-05 | Phase 3 | Pending |
+| LINK-01 | Phase 3 | Pending |
+| LINK-02 | Phase 3 | Pending |
+| LINK-03 | Phase 3 | Pending |
+| PUB-01 | Phase 4 | Pending |
+| PUB-02 | Phase 4 | Pending |
+| PUB-03 | Phase 4 | Pending |
+| PUB-04 | Phase 4 | Pending |
+| AUTO-01 | Phase 1 | Pending |
+| AUTO-02 | Phase 1 | Pending |
+| AUTO-03 | Phase 1 | Pending |
+| AUTO-04 | Phase 1 | Pending |
+| PERSIST-01 | Phase 5 | Pending |
+| PERSIST-02 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 24 total
-- Mapped to phases: 0
-- Unmapped: 24 ⚠️
+- Mapped to phases: 24
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-13*
-*Last updated: 2026-04-13 after initial definition*
+*Last updated: 2026-04-13 after roadmap creation*
