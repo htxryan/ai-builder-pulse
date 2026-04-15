@@ -29,7 +29,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. API keys (Claude, Buttondown, Reddit) are stored as GitHub Actions secrets and accessed by the workflow without being exposed in logs
   3. A keepalive mechanism prevents the workflow from being auto-disabled after 60 days of inactivity
   4. When the pipeline fails, an error notification is triggered via GitHub Actions (email or annotation)
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — TypeScript project scaffolding, Zod config loader, data models, collector interface
+- [ ] 01-02-PLAN.md — GitHub Actions workflows (daily cron + keepalive) and comprehensive tests
 
 ### Phase 2: Content Ingestion
 **Goal**: The pipeline collects fresh, deduplicated content from all four sources and delivers a normalized candidate list
@@ -84,7 +88,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/? | Not started | - |
+| 1. Foundation | 0/2 | Planning complete | - |
 | 2. Content Ingestion | 0/? | Not started | - |
 | 3. AI Curation & Link Integrity | 0/? | Not started | - |
 | 4. Publishing | 0/? | Not started | - |
