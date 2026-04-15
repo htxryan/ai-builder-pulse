@@ -532,22 +532,25 @@ export function loadConfig(): Config {
 | A3 | `corepack enable` is the preferred way to activate pnpm on GitHub runners | Code Examples | MEDIUM -- if corepack behavior changes, the install step would need adjustment. pnpm CI docs recommend this approach. |
 | A4 | `stefanzweifel/git-auto-commit-action@v5` is the current stable version | Standard Stack | LOW -- v5 confirmed in multiple sources, but v7 was mentioned in one context (may be different action version numbering) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **pnpm version pinning strategy**
+1. **pnpm version pinning strategy** (RESOLVED)
    - What we know: `packageManager` field in package.json pins the pnpm version for corepack
    - What's unclear: Should we pin to exact patch (10.33.0) or major (10.x)?
    - Recommendation: Pin to exact version in `packageManager` field for reproducibility. Update deliberately.
+   - **Resolution:** Pin to exact patch version (10.33.0) via `packageManager` field. Plans use `pnpm@10.33.0` in package.json.
 
-2. **GitHub Actions runner OS**
+2. **GitHub Actions runner OS** (RESOLVED)
    - What we know: `ubuntu-latest` is standard and well-tested. Claude's discretion area.
    - What's unclear: Whether `ubuntu-24.04` (explicit) or `ubuntu-latest` (rolling) is better
    - Recommendation: Use `ubuntu-latest` for simplicity. Pin to explicit version only if a breakage occurs.
+   - **Resolution:** Use `ubuntu-latest` per recommendation. Both daily.yml and keepalive.yml specify `runs-on: ubuntu-latest`.
 
-3. **Phase 1 scope for config validation**
+3. **Phase 1 scope for config validation** (RESOLVED)
    - What we know: Phase 1 is skeleton only. Config validation proves secrets work.
    - What's unclear: Should Phase 1 actually call any external APIs to verify secrets are valid (not just present)?
    - Recommendation: Do a lightweight validation (secret is non-empty string). Actual API calls are Phase 2+ concern.
+   - **Resolution:** Lightweight Zod validation only (non-empty string). Actual API connectivity testing deferred to Phase 2+. Plan 01 Task 2 implements this via `z.string().min(1)`.
 
 ## Validation Architecture
 
