@@ -1,0 +1,188 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/gsd-context-monitor.js",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Edit|Write|MultiEdit|Agent|Task"
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/gsd-phase-boundary.sh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' hooks run post-tool-success 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Edit|Write"
+      },
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' hooks run post-read 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": "Read"
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' hooks run post-tool-failure 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Edit|Write"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' prime 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      },
+      {
+        "hooks": [
+          {
+            "command": "bd prime",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/gsd-prompt-guard.js",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/gsd-read-guard.js",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/gsd-workflow-guard.js",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/gsd-validate-commit.sh",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' hooks run phase-guard 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": "Edit|Write"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "node .claude/hooks/gsd-check-update.js",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash .claude/hooks/gsd-session-state.sh",
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' prime 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      },
+      {
+        "hooks": [
+          {
+            "command": "bd prime",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' hooks run phase-audit 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "'/Users/redhale/src/ai-builder-pulse/node_modules/.pnpm/@syottos+darwin-arm64@2.7.2/node_modules/@syottos/darwin-arm64/bin/ca' hooks run user-prompt 2\u003e/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  },
+  "statusLine": {
+    "command": "node .claude/hooks/gsd-statusline.js",
+    "type": "command"
+  }
+}

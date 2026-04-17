@@ -1,0 +1,7 @@
+# compound-agent managed
+.compound-agent/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
