@@ -96,7 +96,9 @@ async function fetchSubredditListing(
     mode === "oauth"
       ? `https://oauth.reddit.com/r/${subreddit}/new`
       : `https://www.reddit.com/r/${subreddit}/new.json`;
-  const params = new URLSearchParams({ limit: String(limit), t: "day" });
+  // /new is time-ordered; the t= param is ignored by this sort. Freshness is
+  // enforced client-side via ctx.cutoffMs.
+  const params = new URLSearchParams({ limit: String(limit) });
   const url = `${base}?${params.toString()}`;
   const headers: Record<string, string> = {
     "user-agent": USER_AGENT,

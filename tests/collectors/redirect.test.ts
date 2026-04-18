@@ -52,6 +52,17 @@ describe("resolveRedirects (O-06)", () => {
     expect(r.url).toBe("https://a.com/other");
   });
 
+  it("detects a self-redirect loop and stops without exhausting hops", async () => {
+    const fetchImpl = mkFetch([
+      { status: 302, location: "https://a.com/same" },
+      { status: 302, location: "https://a.com/same" },
+    ]);
+    const r = await resolveRedirects("https://a.com/same", { fetchImpl });
+    // Already-visited target triggers loop break; resolver stays on input.
+    expect(r.url).toBe("https://a.com/same");
+    expect(r.sourceUrl).toBeUndefined();
+  });
+
   it("survives fetch errors by returning the last known url", async () => {
     const fetchImpl: typeof fetch = async () => {
       throw new Error("network");

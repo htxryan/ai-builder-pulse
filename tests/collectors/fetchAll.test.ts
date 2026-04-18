@@ -104,6 +104,22 @@ describe("fetchAll", () => {
     expect(out.summary.twitter!.status).toBe("skipped");
   });
 
+  it("propagates a parent AbortSignal to in-flight collectors", async () => {
+    const parent = new AbortController();
+    const p = fetchAll(mkRunCtx(), {
+      env: {},
+      timeoutMs: 60_000,
+      collectors: [new TimeoutCollector()],
+      abortSignal: parent.signal,
+    });
+    parent.abort(new Error("shutdown"));
+    const out = await p;
+    // Parent abort surfaces as a non-ok terminal status (error or timeout),
+    // never as a silent ok — that is what the propagation guarantee is for.
+    expect(out.summary.reddit!.status).not.toBe("ok");
+    expect(out.summary.reddit!.error).toMatch(/shutdown|abort/i);
+  });
+
   it("records skipped for reddit when REDDIT_DISABLED=1", async () => {
     const out = await fetchAll(mkRunCtx(), {
       env: { REDDIT_DISABLED: "1" },

@@ -28,6 +28,7 @@ export interface FetchAllOptions {
   readonly collectors?: readonly Collector[];
   readonly timeoutMs?: number;
   readonly env?: NodeJS.ProcessEnv;
+  readonly abortSignal?: AbortSignal;
 }
 
 export function defaultCollectors(): Collector[] {
@@ -90,17 +91,21 @@ export async function fetchAll(
           };
         }
       }
-      const subCtx: CollectorContext = {
-        runDate: ctx.runDate,
-        cutoffMs,
-        abortSignal: new AbortController().signal,
-        env,
-      };
       try {
-        const items = await withTimeout(source, timeoutMs, async (signal) => {
-          const inner: CollectorContext = { ...subCtx, abortSignal: signal };
-          return await c.fetch(inner);
-        });
+        const items = await withTimeout(
+          source,
+          timeoutMs,
+          async (signal) => {
+            const inner: CollectorContext = {
+              runDate: ctx.runDate,
+              cutoffMs,
+              abortSignal: signal,
+              env,
+            };
+            return await c.fetch(inner);
+          },
+          opts.abortSignal,
+        );
         return { source, items, status: "ok" as const };
       } catch (err) {
         const kind = classifyError(err);

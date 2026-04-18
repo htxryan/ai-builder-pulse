@@ -37,7 +37,9 @@ export async function fetchHnRaw(
 ): Promise<HnHit[]> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const tags = opts.tags ?? "story";
-  const hitsPerPage = opts.hitsPerPage ?? 100;
+  // Algolia caps hitsPerPage at 1000; a full HN day is ~300-500 stories so
+  // a single page comfortably covers the 24h window without pagination.
+  const hitsPerPage = opts.hitsPerPage ?? 1000;
   const cutoffSec = Math.floor(ctx.cutoffMs / 1000);
   const params = new URLSearchParams({
     tags,

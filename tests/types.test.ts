@@ -41,6 +41,40 @@ describe("RawItem schema", () => {
   });
 });
 
+describe("RawItemMetadata discriminatedUnion (U-01 closed schemas)", () => {
+  it("rejects unknown discriminator tag", () => {
+    const bad = { ...baseRaw, metadata: { source: "slack", channel: "#ai" } };
+    expect(RawItemSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("requires repoFullName on github-trending metadata", () => {
+    const bad = {
+      ...baseRaw,
+      source: "github-trending",
+      metadata: { source: "github-trending" },
+    };
+    expect(RawItemSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("requires subreddit on reddit metadata", () => {
+    const bad = {
+      ...baseRaw,
+      source: "reddit",
+      metadata: { source: "reddit" },
+    };
+    expect(RawItemSchema.safeParse(bad).success).toBe(false);
+  });
+
+  it("requires feedUrl on rss metadata", () => {
+    const bad = {
+      ...baseRaw,
+      source: "rss",
+      metadata: { source: "rss" },
+    };
+    expect(RawItemSchema.safeParse(bad).success).toBe(false);
+  });
+});
+
 describe("ScoredItem schema", () => {
   it("requires category, relevanceScore in [0,1], keep, description", () => {
     const ok = {

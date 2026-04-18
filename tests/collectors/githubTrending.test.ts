@@ -45,7 +45,7 @@ describe("GithubTrendingCollector", () => {
     const c = new GithubTrendingCollector({ fetchImpl });
     const items = await c.fetch(makeCtx());
     expect(items.length).toBe(2);
-    const acme = items.find((i) => i.id === "ght-acme/ai-agent")!;
+    const acme = items.find((i) => i.id === "ght-acme-ai-agent")!;
     expect(acme.source).toBe("github-trending");
     expect(acme.url).toBe("https://github.com/acme/ai-agent");
     expect(acme.metadata).toMatchObject({

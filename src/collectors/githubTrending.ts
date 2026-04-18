@@ -80,7 +80,7 @@ export function mapTrendingToRawItem(
     ? `${repo.fullName} — ${repo.description}`
     : repo.fullName;
   const parsed = RawItemSchema.safeParse({
-    id: `ght-${repo.fullName}`,
+    id: `ght-${repo.fullName.replace(/\//g, "-")}`,
     source: "github-trending",
     title: title.slice(0, 500),
     url: `https://github.com/${repo.fullName}`,

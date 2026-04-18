@@ -21,6 +21,7 @@ export async function resolveRedirects(
 ): Promise<ResolvedUrl> {
   const maxHops = opts.maxHops ?? MAX_REDIRECT_HOPS;
   const fetchImpl = opts.fetchImpl ?? fetch;
+  const visited = new Set<string>([input]);
   let current = input;
   let hops = 0;
   while (hops < maxHops) {
@@ -44,6 +45,8 @@ export async function resolveRedirects(
     } catch {
       break;
     }
+    if (visited.has(resolved)) break; // loop detected
+    visited.add(resolved);
     current = resolved;
     hops += 1;
   }
