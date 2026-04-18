@@ -10,6 +10,7 @@
 // - Per-attempt timeout via AbortController so a stuck connection cannot hang
 //   the daily cron until the GHA job-level timeout.
 
+import { OrchestratorStageError } from "../errors.js";
 import type { RenderedIssue } from "../renderer/renderer.js";
 import {
   DEFAULT_RETRY_OPTIONS,
@@ -41,7 +42,7 @@ export interface ButtondownPublishResult {
 
 // PublishError carries only public, non-secret context. Do NOT attach the
 // request body or headers here — they contain the API key indirectly.
-export class PublishError extends Error {
+export class PublishError extends OrchestratorStageError {
   readonly status: number | undefined;
   readonly attempts: number;
   readonly terminal: boolean;
@@ -54,7 +55,11 @@ export class PublishError extends Error {
       cause?: unknown;
     },
   ) {
-    super(message, opts.cause !== undefined ? { cause: opts.cause } : undefined);
+    super(message, {
+      stage: "publish",
+      retryable: !opts.terminal,
+      cause: opts.cause,
+    });
     this.name = "PublishError";
     this.status = opts.status;
     this.attempts = opts.attempts;

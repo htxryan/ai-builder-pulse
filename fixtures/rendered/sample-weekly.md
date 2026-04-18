@@ -1,6 +1,6 @@
 # AI Builder Pulse Weekly — 2026-W16
 
-Best of the week (6 of 7 days): 6 items re-ranked by relevance.
+Rolled up 6 of 7 days; 1 skipped: 6 items re-ranked by relevance.
 
 _Note: 1 day missing from this rollup (2026-04-12)._
 

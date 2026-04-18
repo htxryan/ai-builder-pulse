@@ -119,6 +119,20 @@ export async function fetchAll(
             itemCount: items.length,
           });
         }
+        if (metrics.partialFailures.length > 0) {
+          log.warn("collector partial failures", {
+            source,
+            partialFailureCount: metrics.partialFailures.length,
+            scopes: metrics.partialFailures.map((p) => p.scope),
+            itemCount: items.length,
+          });
+          return {
+            source,
+            items,
+            status: "partial" as const,
+            metrics,
+          };
+        }
         return { source, items, status: "ok" as const, metrics };
       } catch (err) {
         const kind = classifyError(err);
@@ -141,9 +155,12 @@ export async function fetchAll(
     summary[r.source] = {
       count: r.items.length,
       status: r.status,
-      error: r.status === "ok" ? undefined : r.error,
+      error: r.status === "ok" || r.status === "partial" ? undefined : r.error,
       ...(r.metrics.redirectFailures > 0
         ? { redirectFailures: r.metrics.redirectFailures }
+        : {}),
+      ...(r.metrics.partialFailures.length > 0
+        ? { partialFailures: [...r.metrics.partialFailures] }
         : {}),
     };
     for (const it of r.items) items.push(it);

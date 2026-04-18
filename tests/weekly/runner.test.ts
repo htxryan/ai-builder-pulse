@@ -211,6 +211,7 @@ describe("runWeeklyDigest", () => {
     expect(r.status).toBe("published");
     expect(published).toBe(true);
     expect(r.availableDays).toEqual(["2026-04-17"]);
-    expect(r.missingDays).toContain("2026-04-18");
+    expect(r.corruptDays).toContain("2026-04-18");
+    expect(r.missingDays).not.toContain("2026-04-18");
   });
 });

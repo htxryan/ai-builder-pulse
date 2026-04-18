@@ -4,11 +4,13 @@
 
 import { z } from "zod";
 import { mapWithConcurrency } from "../collectors/concurrency.js";
+import { OrchestratorStageError } from "../errors.js";
 import { log } from "../log.js";
 import type { Curator, CuratorMetrics } from "./mockCurator.js";
 import { SYSTEM_PROMPT, PROMPT_VERSION } from "./prompt.js";
 import type { RawItem, ScoredItem } from "../types.js";
 import { CategorySchema, ScoredItemSchema } from "../types.js";
+import type { SkippedItemRecord } from "./deadletter.js";
 
 export const CurationRecordSchema = z.object({
   id: z.string().min(1),
@@ -71,19 +73,20 @@ const DEFAULT_OUTPUT_COST = 15.0;
 const DEFAULT_MAX_USD = 1.0;
 const DEFAULT_MAX_CHUNK_CONCURRENCY = 3;
 
-export class CountInvariantError extends Error {
+export class CountInvariantError extends OrchestratorStageError {
   constructor(
     public readonly expected: number,
     public readonly actual: number,
   ) {
     super(
       `E-05 count invariant violated: expected ${expected} records, got ${actual}`,
+      { stage: "curate", retryable: false },
     );
     this.name = "CountInvariantError";
   }
 }
 
-export class CostCeilingError extends Error {
+export class CostCeilingError extends OrchestratorStageError {
   constructor(
     public readonly estimatedUsd: number,
     public readonly maxUsd: number,
@@ -92,6 +95,7 @@ export class CostCeilingError extends Error {
   ) {
     super(
       `Cost ceiling exceeded (${scope}${chunkIdx !== undefined ? ` idx=${chunkIdx}` : ""}): estimated $${estimatedUsd.toFixed(4)} > $${maxUsd.toFixed(4)}`,
+      { stage: "curate", retryable: false },
     );
     this.name = "CostCeilingError";
   }
@@ -107,6 +111,7 @@ export class ClaudeCurator implements Curator {
   private readonly maxChunkConcurrency: number;
   private readonly systemPrompt: string;
   private _lastMetrics: CuratorMetrics | undefined;
+  private _lastSkipped: SkippedItemRecord[] = [];
 
   constructor(opts: ClaudeCuratorOptions) {
     this.client = opts.client;
@@ -144,6 +149,7 @@ export class ClaudeCurator implements Curator {
   }
 
   async curate(items: RawItem[]): Promise<ScoredItem[]> {
+    this._lastSkipped = [];
     if (items.length === 0) return [];
 
     const chunks = chunkItems(items, this.chunkThreshold);
@@ -214,15 +220,32 @@ export class ClaudeCurator implements Curator {
       if (!rec) {
         throw new CountInvariantError(items.length, recordsById.size);
       }
-      scored.push(
-        ScoredItemSchema.parse({
-          ...raw,
-          category: rec.category,
-          relevanceScore: rec.relevanceScore,
-          keep: rec.keep,
-          description: rec.description,
-        }),
-      );
+      // Final merge: if ScoredItemSchema rejects a valid CurationRecord glued
+      // onto a RawItem (e.g. category/score drift past the schema bounds), we
+      // treat the item as skipped rather than aborting the whole run. The
+      // orchestrator writes the deadletter and the remaining items ship.
+      const parsed = ScoredItemSchema.safeParse({
+        ...raw,
+        category: rec.category,
+        relevanceScore: rec.relevanceScore,
+        keep: rec.keep,
+        description: rec.description,
+      });
+      if (parsed.success) {
+        scored.push(parsed.data);
+      } else {
+        const issue = parsed.error.issues[0];
+        this._lastSkipped.push({
+          rawItem: raw,
+          zodPath: issue?.path.join(".") ?? "",
+          reason: issue?.message ?? "ScoredItemSchema validation failed",
+        });
+        log.warn("curator skipped item (zod merge failure)", {
+          id: raw.id,
+          zodPath: issue?.path.join("."),
+          reason: issue?.message,
+        });
+      }
     }
 
     this._lastMetrics = {
@@ -255,6 +278,10 @@ export class ClaudeCurator implements Curator {
 
   lastMetrics(): CuratorMetrics | undefined {
     return this._lastMetrics;
+  }
+
+  lastSkipped(): readonly SkippedItemRecord[] {
+    return this._lastSkipped;
   }
 
   private estimateUsd(inputTokens: number, outputTokens: number): number {

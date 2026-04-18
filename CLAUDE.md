@@ -182,6 +182,54 @@ bd close <id>         # Complete work
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
+## Observability
+
+Every log line flows through `src/log.ts` (`log.info` / `log.warn` / `log.error` /
+`log.debug`). The helpers emit GitHub Actions annotations (`::error::` /
+`::warning::`) alongside JSON so both the Actions UI and a `jq`-piped tail give
+useful output.
+
+### Log-level policy
+
+- **`info`** — stage transitions, milestones, and high-level state changes. One
+  line per stage entry/exit (`orchestrator start`, `pre-filter complete`,
+  `publish ok`, `weekly digest built`). Safe to emit liberally; CI streams it.
+- **`warn`** — expected transient failure: timeouts, 5xx, TLS errors, redirect
+  resolution failures, per-subreddit fetch errors, item-level zod skips,
+  weekly corrupt-day skips, backfill detection, `S-05` source-floor skip.
+  These do NOT indicate a bug — they signal degradation the operator may want
+  to watch. Always accompanied by a `::warning::` annotation.
+- **`error`** — unexpected failure or programmer error that the pipeline cannot
+  silently tolerate: uncaught throws, cost-ceiling hits, count-invariant
+  violations, missing API key fail-fast, publish 4xx, archivist write failure
+  after a successful publish (divergence risk), sentinel write failure,
+  link-integrity violations. Always accompanied by a `::error::` annotation
+  and typically surfaces via non-zero exit.
+- **`debug`** — only emitted when `DEBUG=1`. Reserve for payload traces or
+  per-item detail that would otherwise drown the normal log.
+
+### Correlation id
+
+`bindRunId(runId)` is called once per process at the top of every entry point
+(`runOrchestrator`, `runWeeklyDigest`). The id is attached to every emitted
+line as `runId=<id>` so an operator can `grep runId=<id>` to isolate a single
+run's output across interleaved async logs.
+
+### Error taxonomy
+
+All stage-scoped errors extend `OrchestratorStageError` (`src/errors.ts`) with
+a `{stage, cause, retryable}` shape. Catchers do `instanceof OrchestratorStageError`
+for stage-scoped handling rather than pattern-matching on each concrete
+subclass (`PublishError`, `CostCeilingError`, `CollectorTimeoutError`, etc.).
+
+### Deadletter
+
+Curator-level zod validation failures for individual records do NOT abort the
+run. The offending `RawItem` + zod issue path are written to
+`issues/{runDate}/.skipped-items.json`; the skipped count appears in the GHA
+job summary. This preserves an audit trail instead of silently dropping
+items.
+
 ## Session Completion
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.

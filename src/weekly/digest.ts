@@ -25,6 +25,11 @@ export interface WeeklyDigestInput {
   readonly weekId: string; // e.g. "2026-W16"
   readonly availableDays: readonly ArchivedDay[];
   readonly missingDays: readonly string[]; // YYYY-MM-DD of days with no items.json
+  // Days that had a readable items.json file but whose contents failed zod
+  // validation or JSON parsing. Surfaced separately from missingDays so the
+  // weekly header can distinguish 'rolled up N of 7' from 'N rolled up, M
+  // corrupt, K missing' — each has a different operator action.
+  readonly corruptDays?: readonly string[];
   readonly topN?: number; // default 12 — total items that appear in the digest
   readonly topPerCategory?: number; // default 3 — cap items shown per category
 }
@@ -171,22 +176,36 @@ export function buildWeeklyDigest(input: WeeklyDigestInput): WeeklyDigest {
   sections.push("");
 
   const daysCovered = input.availableDays.length;
-  const totalWindow = daysCovered + input.missingDays.length;
-  // Day-coverage breadcrumb: "7 of 7 days" when complete, or the ratio when
-  // the rollup is partial. We always show the ratio so subscribers can tell
-  // at a glance whether the week was fully captured.
+  const corruptDays = input.corruptDays ?? [];
+  const skippedCount = input.missingDays.length + corruptDays.length;
+  const totalWindow = daysCovered + skippedCount;
+  // Day-coverage breadcrumb: "Rolled up 5 of 7 days; 2 skipped" when partial,
+  // "Rolled up 7 of 7 days" when complete. 'skipped' covers both missing
+  // (no items.json on disk) and corrupt (items.json unreadable / invalid
+  // shape) — the body notes below break out which is which.
+  const headerSuffix =
+    skippedCount > 0 ? `; ${skippedCount} skipped` : "";
   const coverage =
-    totalWindow > 0 ? `${daysCovered} of ${totalWindow} days` : `${daysCovered} days`;
+    totalWindow > 0
+      ? `Rolled up ${daysCovered} of ${totalWindow} days${headerSuffix}`
+      : `Rolled up ${daysCovered} days`;
   sections.push(
-    `Best of the week (${coverage}): ${selected.length} item${selected.length === 1 ? "" : "s"} re-ranked by relevance.`,
+    `${coverage}: ${selected.length} item${selected.length === 1 ? "" : "s"} re-ranked by relevance.`,
   );
   sections.push("");
 
-  // E-02 tolerance: annotate missing days so subscribers see when the weekly
-  // isn't a full 7-day rollup (e.g. a new deploy, or an outage).
+  // E-02 tolerance: annotate missing/corrupt days separately so operators can
+  // tell "archive folder absent" (likely a skipped cron) from "archive folder
+  // present but unreadable" (likely a broken write or disk corruption).
   if (input.missingDays.length > 0) {
     sections.push(
       `_Note: ${input.missingDays.length} day${input.missingDays.length === 1 ? "" : "s"} missing from this rollup (${input.missingDays.join(", ")})._`,
+    );
+    sections.push("");
+  }
+  if (corruptDays.length > 0) {
+    sections.push(
+      `_Note: ${corruptDays.length} day${corruptDays.length === 1 ? "" : "s"} skipped due to corrupt items.json (${corruptDays.join(", ")})._`,
     );
     sections.push("");
   }

@@ -1,16 +1,16 @@
 # Polish Report -- Cycle 2
 
-Generated: 2026-04-18T19:53:54Z
+Generated: 2026-04-18T20:51:09Z
 
 ## claude-sonnet
 
-(dry run -- no actual review)
+What can I help you with?
 
 ## claude-opus
 
-(dry run -- no actual review)
+The message is just "-". Did you mean to send a command or question? Let me know what you'd like to work on.
 
 ## gemini
 
-(dry run -- no actual review)
+(no output -- reviewer may have crashed or timed out)
 

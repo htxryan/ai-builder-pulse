@@ -80,11 +80,18 @@ export const ScoredItemSchema = RawItemSchema.extend({
 });
 export type ScoredItem = z.infer<typeof ScoredItemSchema>;
 
+export const PartialFailureSchema = z.object({
+  scope: z.string(),
+  error: z.string(),
+  errClass: z.string(),
+});
+export type PartialFailureRecord = z.infer<typeof PartialFailureSchema>;
+
 export const SourceSummarySchema = z.record(
   SourceSchema,
   z.object({
     count: z.number().int().nonnegative(),
-    status: z.enum(["ok", "skipped", "error", "timeout"]),
+    status: z.enum(["ok", "skipped", "error", "timeout", "partial"]),
     error: z.string().optional(),
     // Items from this source that survived pre-filter (E3). Optional because
     // pre-filter has not yet run when collectors first emit their summary;
@@ -95,6 +102,11 @@ export const SourceSummarySchema = z.record(
     // whether a spike in redirect failures is driving downstream dedup churn.
     // Only populated by collectors that resolve redirects (hn, reddit).
     redirectFailures: z.number().int().nonnegative().optional(),
+    // Sub-scope failures captured without aborting the collector — e.g. a
+    // single subreddit 403 inside a reddit fetch across N subreddits. When
+    // present, status is reported as "partial" (collector produced some
+    // items but not all planned sub-scopes succeeded).
+    partialFailures: z.array(PartialFailureSchema).optional(),
   }),
 );
 export type SourceSummary = z.infer<typeof SourceSummarySchema>;

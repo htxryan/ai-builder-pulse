@@ -1,5 +1,6 @@
 import type { Category, RawItem, ScoredItem } from "../types.js";
 import { CATEGORIES, ScoredItemSchema } from "../types.js";
+import type { SkippedItemRecord } from "./deadletter.js";
 
 // Optional cost/token metrics emitted by curators that talk to a paid API.
 // MockCurator leaves this undefined; ClaudeCurator populates after each
@@ -20,6 +21,11 @@ export interface Curator {
   // Optional — returns metrics from the most recent `curate` call. Curators
   // that do not track cost (e.g. `MockCurator`) simply omit this hook.
   lastMetrics?(): CuratorMetrics | undefined;
+  // Optional — returns RawItems the curator could not score (zod failures,
+  // retry exhaustion with structured cause). The orchestrator writes these
+  // to `issues/{runDate}/.skipped-items.json` and surfaces the count in the
+  // GHA job summary. Empty array when every item mapped cleanly.
+  lastSkipped?(): readonly SkippedItemRecord[];
 }
 
 function pickCategory(item: RawItem): Category {

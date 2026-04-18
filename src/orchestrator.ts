@@ -1,4 +1,8 @@
 import { existsSync } from "node:fs";
+import {
+  runArchivesFallback,
+  type ArchivesFallbackResult,
+} from "./archivesFallback.js";
 import { archiveRun, sentinelPath as archiveSentinelPath } from "./archivist/index.js";
 import { fetchAll as realFetchAll } from "./collectors/index.js";
 import { mockFetchAll } from "./collectors/mock.js";
@@ -9,6 +13,7 @@ import {
   CostCeilingError,
 } from "./curator/index.js";
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
+import { writeSkippedItemsJson } from "./curator/deadletter.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
 import { bindRunId, log, makeRunId, registerSecretsFromEnv } from "./log.js";
 import { runBackfill, type BackfillResult } from "./backfill.js";
@@ -48,6 +53,7 @@ export interface OrchestratorOptions {
 export type OrchestratorStatus =
   | "published"
   | "published_archive_failed"
+  | "published_from_archives"
   | "dry_run"
   | "idempotent_skip"
   | "empty_skip"
@@ -95,6 +101,12 @@ export interface OrchestratorResult {
   // Undefined only when backfill itself threw unexpectedly (logged as a
   // non-blocking error) or when an early fail-fast exit preceded it.
   backfill?: BackfillResult | undefined;
+  // Count of RawItems the curator could not score cleanly. Deadlettered to
+  // `issues/{runDate}/.skipped-items.json`. 0 when all items mapped cleanly.
+  skippedItemCount?: number;
+  // Populated when AC7 archives fallback was invoked (i.e. a day that would
+  // otherwise have been silent re-published a prior day's top items).
+  archivesFallback?: ArchivesFallbackResult;
 }
 
 const DEFAULT_MIN_ITEMS = 5;
@@ -376,11 +388,30 @@ async function runOrchestratorInner(
       contributingSources,
       minSources: ctx.minSources,
     });
+    const fallback = await maybeRunArchivesFallback(
+      env,
+      repoRoot,
+      runDate,
+      dryRun,
+      publisher,
+    );
+    if (fallback?.status === "published" || fallback?.status === "dry_run") {
+      return done({
+        runDate,
+        status: fallback.status === "dry_run" ? "dry_run" : "published_from_archives",
+        reason: "S-05_fallback",
+        summary: filteredSummary,
+        ...(fallback.rendered ? { rendered: fallback.rendered } : {}),
+        ...(fallback.publishId ? { publishId: fallback.publishId } : {}),
+        archivesFallback: fallback,
+      });
+    }
     return done({
       runDate,
       status: "source_floor_skip",
       reason: "S-05",
       summary: filteredSummary,
+      ...(fallback ? { archivesFallback: fallback } : {}),
     });
   }
 
@@ -419,12 +450,26 @@ async function runOrchestratorInner(
     });
   }
   const curatorMetrics = curator.lastMetrics?.();
+  const skippedItems = curator.lastSkipped?.() ?? [];
 
-  // E-05 defensive re-check (Curator should have enforced this already).
-  if (scored.length !== filteredItems.length) {
+  // P3 deadletter: persist any skipped RawItems so an operator has audit
+  // trail without having to grep logs. Best-effort — write failure logs but
+  // does not abort the run (the curator already partitioned these out).
+  if (skippedItems.length > 0) {
+    writeSkippedItemsJson(repoRoot, runDate, skippedItems);
+    log.warn("curator skipped items deadlettered", {
+      runDate,
+      skippedCount: skippedItems.length,
+    });
+  }
+
+  // E-05 defensive re-check: scored + skipped must fully cover the input.
+  // A curator that drops items outside the deadletter path is a regression.
+  if (scored.length + skippedItems.length !== filteredItems.length) {
     log.error("curator count mismatch (E-05)", {
       expected: filteredItems.length,
-      actual: scored.length,
+      scored: scored.length,
+      skipped: skippedItems.length,
     });
     return done({
       runDate,
@@ -433,6 +478,7 @@ async function runOrchestratorInner(
       scored,
       summary: filteredSummary,
       curatorMetrics,
+      skippedItemCount: skippedItems.length,
     });
   }
 
@@ -457,6 +503,7 @@ async function runOrchestratorInner(
       scored,
       summary: filteredSummary,
       curatorMetrics,
+      skippedItemCount: skippedItems.length,
     });
   }
   log.info("link-integrity ok", {
@@ -476,6 +523,27 @@ async function runOrchestratorInner(
       kept: kept.length,
       min: ctx.minItemsToPublish,
     });
+    const fallback = await maybeRunArchivesFallback(
+      env,
+      repoRoot,
+      runDate,
+      dryRun,
+      publisher,
+    );
+    if (fallback?.status === "published" || fallback?.status === "dry_run") {
+      return done({
+        runDate,
+        status: fallback.status === "dry_run" ? "dry_run" : "published_from_archives",
+        reason: "S-02_fallback",
+        scored,
+        summary: filteredSummary,
+        ...(fallback.rendered ? { rendered: fallback.rendered } : {}),
+        ...(fallback.publishId ? { publishId: fallback.publishId } : {}),
+        curatorMetrics,
+        skippedItemCount: skippedItems.length,
+        archivesFallback: fallback,
+      });
+    }
     return done({
       runDate,
       status: "empty_skip",
@@ -483,6 +551,8 @@ async function runOrchestratorInner(
       scored,
       summary: filteredSummary,
       curatorMetrics,
+      skippedItemCount: skippedItems.length,
+      ...(fallback ? { archivesFallback: fallback } : {}),
     });
   }
 
@@ -509,6 +579,7 @@ async function runOrchestratorInner(
       summary: filteredSummary,
       rendered,
       curatorMetrics,
+      skippedItemCount: skippedItems.length,
     });
   }
 
@@ -533,6 +604,7 @@ async function runOrchestratorInner(
       summary: filteredSummary,
       rendered,
       curatorMetrics,
+      skippedItemCount: skippedItems.length,
     });
   }
 
@@ -579,7 +651,40 @@ async function runOrchestratorInner(
     rendered,
     publishId: publishResult.id,
     curatorMetrics,
+    skippedItemCount: skippedItems.length,
   });
+}
+
+// AC7 gate. Called from S-05 and S-02 skip paths; returns undefined when the
+// flag is off so the silence-SLA behavior (document skip, don't send) is the
+// default. Off-by-default is deliberate: freshness is the core product value
+// and operators must opt in to the re-share path per run.
+async function maybeRunArchivesFallback(
+  env: NodeJS.ProcessEnv,
+  repoRoot: string,
+  runDate: string,
+  dryRun: boolean,
+  publisher: Publisher,
+): Promise<ArchivesFallbackResult | undefined> {
+  if (env.ARCHIVES_FALLBACK !== "1") return undefined;
+  log.info("ARCHIVES_FALLBACK=1: attempting from-archives re-publish", {
+    runDate,
+  });
+  try {
+    return await runArchivesFallback(repoRoot, runDate, {
+      dryRun,
+      publisher,
+    });
+  } catch (err) {
+    log.error("archives fallback threw unexpectedly", {
+      runDate,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {
+      status: "failed",
+      reason: "threw",
+    };
+  }
 }
 
 function defaultButtondownPublisher(env: NodeJS.ProcessEnv): Publisher {

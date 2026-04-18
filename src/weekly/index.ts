@@ -51,6 +51,10 @@ export interface WeeklyResult {
   readonly status: WeeklyStatus;
   readonly availableDays: readonly string[];
   readonly missingDays: readonly string[];
+  // Days where items.json existed but could not be parsed or failed zod
+  // validation. Distinct from `missingDays` (no file at all) so operators can
+  // tell "cron never ran" from "write corrupted the archive".
+  readonly corruptDays: readonly string[];
   readonly digestPath?: string;
   readonly publishId?: string;
   readonly reason?: string;
@@ -71,26 +75,36 @@ export function weeklySentinelPath(repoRoot: string, weekId: string): string {
   return path.join(weeklyDir(repoRoot), `${weekId}.published`);
 }
 
-function loadDay(repoRoot: string, runDate: string): ArchivedDay | null {
+type DayLoadResult =
+  | { kind: "ok"; day: ArchivedDay }
+  | { kind: "missing" }
+  | { kind: "corrupt"; reason: string };
+
+function loadDay(repoRoot: string, runDate: string): DayLoadResult {
   const p = itemsJsonPath(repoRoot, runDate);
-  if (!existsSync(p)) return null;
+  if (!existsSync(p)) return { kind: "missing" };
+  // Each day is processed in its own try/catch so a single corrupt archive
+  // day does not abort the entire weekly rollup. Both JSON.parse and
+  // ArchivedDaySchema.parse can throw; both must be isolated.
   try {
     const raw = JSON.parse(readFileSync(p, "utf8")) as unknown;
     const parsed = ArchivedDaySchema.safeParse(raw);
     if (!parsed.success) {
+      const reason = parsed.error.issues[0]?.message ?? "invalid shape";
       log.warn("weekly: items.json shape invalid; skipping day", {
         runDate,
-        error: parsed.error.issues[0]?.message,
+        error: reason,
       });
-      return null;
+      return { kind: "corrupt", reason };
     }
-    return parsed.data;
+    return { kind: "ok", day: parsed.data };
   } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
     log.warn("weekly: items.json unreadable; skipping day", {
       runDate,
-      error: err instanceof Error ? err.message : String(err),
+      error: reason,
     });
-    return null;
+    return { kind: "corrupt", reason };
   }
 }
 
@@ -140,6 +154,7 @@ export async function runWeeklyDigest(
       status: "idempotent_skip",
       availableDays: [],
       missingDays: [],
+      corruptDays: [],
       reason: "sentinel_present",
     });
   }
@@ -158,6 +173,7 @@ export async function runWeeklyDigest(
         status: "failed",
         availableDays: [],
         missingDays: [],
+        corruptDays: [],
         reason: "missing_api_key",
       });
     }
@@ -166,21 +182,39 @@ export async function runWeeklyDigest(
   const loadStart = Date.now();
   const availableDays: ArchivedDay[] = [];
   const missingDays: string[] = [];
+  const corruptDays: string[] = [];
   for (const d of window) {
     const loaded = loadDay(repoRoot, d);
-    if (loaded) availableDays.push(loaded);
+    if (loaded.kind === "ok") availableDays.push(loaded.day);
+    else if (loaded.kind === "corrupt") corruptDays.push(d);
     else missingDays.push(d);
   }
   timings.loadDays = Date.now() - loadStart;
+  if (corruptDays.length > 0) {
+    log.warn("weekly: corrupt days skipped", {
+      weekId,
+      corruptDays,
+      rolledUp: availableDays.length,
+      windowSize: window.length,
+    });
+  }
 
   if (availableDays.length === 0) {
-    log.warn("weekly: no days available in window", { weekId, window });
+    log.warn("weekly: no days available in window", {
+      weekId,
+      window,
+      corruptDays,
+    });
     return finish({
       weekId,
       status: "no_days_available",
       availableDays: [],
-      missingDays: window,
-      reason: "no_items_json_in_window",
+      missingDays,
+      corruptDays,
+      reason:
+        corruptDays.length > 0
+          ? "all_days_corrupt_or_missing"
+          : "no_items_json_in_window",
     });
   }
 
@@ -189,6 +223,7 @@ export async function runWeeklyDigest(
     weekId,
     availableDays,
     missingDays,
+    corruptDays,
   });
   timings.buildDigest = Date.now() - buildStart;
 
@@ -196,6 +231,7 @@ export async function runWeeklyDigest(
     weekId,
     days: availableDays.length,
     missingDays: missingDays.length,
+    corruptDays: corruptDays.length,
     itemCount: digest.itemCount,
   });
 
@@ -218,6 +254,7 @@ export async function runWeeklyDigest(
       status: "dry_run",
       availableDays: availableDays.map((d) => d.runDate),
       missingDays,
+      corruptDays,
       digestPath: dest,
       itemCount: digest.itemCount,
     });
@@ -259,6 +296,7 @@ export async function runWeeklyDigest(
       status: sentinelOk ? "published" : "published_sentinel_failed",
       availableDays: availableDays.map((d) => d.runDate),
       missingDays,
+      corruptDays,
       digestPath: dest,
       publishId: result.id,
       itemCount: digest.itemCount,
@@ -276,6 +314,7 @@ export async function runWeeklyDigest(
       status: "failed",
       availableDays: availableDays.map((d) => d.runDate),
       missingDays,
+      corruptDays,
       digestPath: dest,
       reason: "publish_failed",
       itemCount: digest.itemCount,

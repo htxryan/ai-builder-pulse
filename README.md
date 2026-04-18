@@ -23,6 +23,34 @@ DRY_RUN=1 pnpm start  # run orchestrator without publishing
 | `ANTHROPIC_API_KEY` | Claude API key (curator). |
 | `BUTTONDOWN_API_KEY` | Buttondown publish key. |
 | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Reddit OAuth. |
+| `ARCHIVES_FALLBACK` | `1` = when the pipeline would otherwise silence a day (S-02 empty or S-05 source-floor skip), re-publish the most recent prior archive with a "From the archives" banner. Off by default — see silence SLA below. |
+| `DEBUG` | `1` = emit `debug`-level log lines. Off by default. |
+
+## Silence SLA
+
+When collectors all return empty, the source floor (S-05) is not met, or the
+kept-item count (S-02) falls below `MIN_ITEMS_TO_PUBLISH`, the default
+behavior is:
+
+- **Skip the day, never silently**. The orchestrator exits with status
+  `empty_skip` / `source_floor_skip`, emits a `::warning::` annotation, and
+  surfaces the skip + reason in the GHA job summary.
+- **No email is sent**. Subscribers experience an occasional missed day — the
+  tradeoff for strict freshness guarantees (no resends of stale content).
+
+Set `ARCHIVES_FALLBACK=1` to opt into re-publishing the most recent prior
+archive with a visible banner instead of skipping. This trades strict
+freshness for continuity and is off by default so operators must consciously
+accept the trade.
+
+## Partial failures & error visibility
+
+Per-subreddit errors, per-item redirect-resolve failures, and weekly
+corrupt-day skips are captured in the run summary without aborting the day.
+See `CLAUDE.md` → **Observability** for the logging policy (info / warn /
+error), correlation-id protocol (`runId`), and the `OrchestratorStageError`
+taxonomy. The `.skipped-items.json` deadletter file preserves audit trail for
+any curator-level zod failures.
 
 ## Retention Policy (U-11)
 

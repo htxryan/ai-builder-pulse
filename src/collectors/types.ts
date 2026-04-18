@@ -4,12 +4,27 @@ import type { RawItem, RunContext } from "../types.js";
 // increment counters here instead of silently swallowing partial failures in
 // `catch {}`. The bag is intentionally per-collector so failures from HN are
 // not conflated with failures from Reddit.
+export interface PartialFailure {
+  // Sub-scope identifier — the subreddit for reddit, the feed URL for rss,
+  // or "batch" for single-call collectors like HN's Algolia search.
+  readonly scope: string;
+  // Single-line error summary, never the full stack. Sanitized via the
+  // shared log.ts secret redaction pipeline when emitted.
+  readonly error: string;
+  // Coarse error class (timeout/tls/http_5xx/etc.) so the run summary can
+  // group partial failures without re-parsing the raw message.
+  readonly errClass: string;
+}
+
 export interface CollectorMetrics {
   redirectFailures: number;
+  // Sub-scope failures captured *without* aborting the collector (a single
+  // subreddit 403 should not blank the whole Reddit source).
+  partialFailures: PartialFailure[];
 }
 
 export function makeCollectorMetrics(): CollectorMetrics {
-  return { redirectFailures: 0 };
+  return { redirectFailures: 0, partialFailures: [] };
 }
 
 export interface CollectorContext {

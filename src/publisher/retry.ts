@@ -18,22 +18,24 @@ export const DEFAULT_RETRY_OPTIONS: RetryOptions = {
   maxDelayMs: 5_000,
 };
 
+import { OrchestratorStageError } from "../errors.js";
+
 // Signal from the operation that the error is retryable (typically a 5xx or
 // a transport failure). Anything else is terminal and fails fast.
-export class RetryableError extends Error {
+export class RetryableError extends OrchestratorStageError {
   constructor(message: string, cause?: unknown) {
-    super(message, cause !== undefined ? { cause } : undefined);
+    super(message, { stage: "publish", retryable: true, cause });
     this.name = "RetryableError";
   }
 }
 
 // Result of the final unsuccessful attempt — surfaced to callers so they can
 // log `attempts` for observability (E-04 debugging).
-export class RetryExhaustedError extends Error {
+export class RetryExhaustedError extends OrchestratorStageError {
   readonly attempts: number;
   readonly lastError: unknown;
   constructor(message: string, attempts: number, lastError: unknown) {
-    super(message);
+    super(message, { stage: "publish", retryable: false, cause: lastError });
     this.name = "RetryExhaustedError";
     this.attempts = attempts;
     this.lastError = lastError;

@@ -41,6 +41,7 @@ function fmtUsd(n: number | undefined): string {
 
 function statusEmoji(status: string): string {
   if (status === "published") return "✅";
+  if (status === "published_from_archives") return "🔁";
   if (status === "dry_run") return "🧪";
   if (status === "idempotent_skip") return "⏭️";
   if (
@@ -61,19 +62,33 @@ function renderSourceRows(summary: SourceSummary | undefined): string {
   }
   const rows: string[] = [];
   rows.push(
-    "| Source | Status | Raw | Kept | Redirect fails | Note |",
+    "| Source | Status | Raw | Kept | Redirect fails | Partial | Note |",
   );
-  rows.push("|---|---|--:|--:|--:|---|");
+  rows.push("|---|---|--:|--:|--:|--:|---|");
+  const partialDetails: string[] = [];
   for (const [src, entry] of Object.entries(summary)) {
     if (!entry) continue;
+    // Partial failures: compact count in the row; one-line breakdown below
+    // the table so the main grid stays scannable but detail is never lost.
+    const partialCount = entry.partialFailures?.length ?? 0;
     const note = entry.error ? entry.error.replace(/\|/g, "\\|") : "";
     rows.push(
       `| ${src} | ${entry.status} | ${entry.count} | ${
         entry.keptCount ?? "—"
-      } | ${entry.redirectFailures ?? 0} | ${note} |`,
+      } | ${entry.redirectFailures ?? 0} | ${partialCount || "—"} | ${note} |`,
     );
+    if (entry.partialFailures && entry.partialFailures.length > 0) {
+      const brief = entry.partialFailures
+        .map((p) => `${p.scope}:${p.errClass}`)
+        .join(", ");
+      partialDetails.push(`- **${src}** partial failures: ${brief}`);
+    }
   }
-  return rows.join("\n") + "\n";
+  let out = rows.join("\n") + "\n";
+  if (partialDetails.length > 0) {
+    out += "\n" + partialDetails.join("\n") + "\n";
+  }
+  return out;
 }
 
 function renderBackfillRows(bf: BackfillResult | undefined): string {
@@ -127,6 +142,17 @@ export function renderOrchestratorSummary(r: OrchestratorResult): string {
       `- **rendered**: ${r.rendered.subject.length}b subject · ${r.rendered.body.length}b body`,
     );
   }
+  if (r.skippedItemCount && r.skippedItemCount > 0) {
+    lines.push(
+      `- **skipped items**: ${r.skippedItemCount} (see \`issues/${r.runDate}/.skipped-items.json\`)`,
+    );
+  }
+  if (r.archivesFallback) {
+    const af = r.archivesFallback;
+    lines.push(
+      `- **archives fallback**: \`${af.status}\`${af.sourceRunDate ? ` · from ${af.sourceRunDate}` : ""}${af.itemCount !== undefined ? ` · ${af.itemCount} items` : ""}`,
+    );
+  }
   lines.push("");
   lines.push("### Sources");
   lines.push("");
@@ -152,8 +178,11 @@ export function renderWeeklySummary(r: WeeklyResult): string {
   if (r.digestPath) lines.push(`- **digestPath**: \`${r.digestPath}\``);
   if (r.itemCount !== undefined) lines.push(`- **itemCount**: ${r.itemCount}`);
   lines.push(
-    `- **days**: ${r.availableDays.length} available (${r.availableDays.join(", ") || "—"}), ${r.missingDays.length} missing`,
+    `- **days**: ${r.availableDays.length} available (${r.availableDays.join(", ") || "—"}), ${r.missingDays.length} missing, ${r.corruptDays.length} corrupt`,
   );
+  if (r.corruptDays.length > 0) {
+    lines.push(`- **corruptDays**: \`${r.corruptDays.join(", ")}\``);
+  }
   lines.push("");
   lines.push("### Stage timings");
   lines.push("");

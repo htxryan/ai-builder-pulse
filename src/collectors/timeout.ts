@@ -1,9 +1,18 @@
+import { OrchestratorStageError } from "../errors.js";
+
 export const DEFAULT_COLLECTOR_TIMEOUT_MS = 60_000;
 
-export class CollectorTimeoutError extends Error {
+export class CollectorTimeoutError extends OrchestratorStageError {
+  readonly source: string;
+  readonly ms: number;
   constructor(source: string, ms: number) {
-    super(`collector ${source} timed out after ${ms}ms`);
+    super(`collector ${source} timed out after ${ms}ms`, {
+      stage: "collect",
+      retryable: true,
+    });
     this.name = "CollectorTimeoutError";
+    this.source = source;
+    this.ms = ms;
   }
 }
 

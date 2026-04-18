@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { classifyRedirectError } from "../errors.js";
+import { log } from "../log.js";
 import type { RawItem } from "../types.js";
 import { RawItemSchema } from "../types.js";
 import { DEFAULT_REDIRECT_CONCURRENCY, mapWithConcurrency } from "./concurrency.js";
@@ -126,9 +128,17 @@ export async function mapRedditPost(
     const resolved = await resolveImpl(post.url, { signal: ctx.abortSignal });
     url = resolved.url;
     sourceUrl = resolved.sourceUrl;
-  } catch {
-    // Redirect resolution failed — keep the original URL but record the
-    // miss so `runSummary` can surface how many items shipped un-resolved.
+  } catch (err) {
+    // Redirect resolution failed — log URL + error class BEFORE incrementing
+    // the metric so debugging is never blind. See `classifyRedirectError` for
+    // the coarse class taxonomy (timeout/tls/http_5xx/etc.).
+    log.warn("reddit redirect resolve failed", {
+      source: "reddit",
+      subreddit: post.subreddit,
+      url: post.url,
+      errClass: classifyRedirectError(err),
+      error: err instanceof Error ? err.message : String(err),
+    });
     ctx.metrics.redirectFailures += 1;
   }
   const publishedAt = new Date(post.created_utc * 1000).toISOString();
@@ -172,7 +182,23 @@ export class RedditCollector implements Collector {
       subs.map(async (sub) => {
         try {
           return await fetchSubredditListing(sub, ctx, mode, fetchImpl, limit, token);
-        } catch {
+        } catch (err) {
+          // Per-subreddit failures are captured (not swallowed) so the caller
+          // can distinguish 'subreddit empty today' from 'fetch error' — the
+          // run summary renders both counts.
+          const errClass = classifyRedirectError(err);
+          const msg = err instanceof Error ? err.message : String(err);
+          log.warn("reddit subreddit fetch failed", {
+            source: "reddit",
+            subreddit: sub,
+            errClass,
+            error: msg,
+          });
+          ctx.metrics.partialFailures.push({
+            scope: sub,
+            errClass,
+            error: msg,
+          });
           return [] as RedditPost[];
         }
       }),

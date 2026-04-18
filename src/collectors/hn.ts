@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { classifyRedirectError } from "../errors.js";
+import { log } from "../log.js";
 import type { RawItem } from "../types.js";
 import { RawItemSchema } from "../types.js";
 import { DEFAULT_REDIRECT_CONCURRENCY, mapWithConcurrency } from "./concurrency.js";
@@ -73,9 +75,17 @@ export async function mapHnHitToRawItem(
     const resolved = await resolveImpl(rawUrl, { signal: ctx.abortSignal });
     url = resolved.url;
     sourceUrl = resolved.sourceUrl;
-  } catch {
-    // Redirect resolution failed — keep the original URL but record the
-    // miss so `runSummary` can surface how many items shipped un-resolved.
+  } catch (err) {
+    // Redirect resolution failed — keep the original URL but log URL + error
+    // class BEFORE incrementing the metric so debugging is never blind. Kept
+    // at warn: this is expected transient behavior (5xx, TLS, slow hosts),
+    // not programmer error.
+    log.warn("hn redirect resolve failed", {
+      source: "hn",
+      url: rawUrl,
+      errClass: classifyRedirectError(err),
+      error: err instanceof Error ? err.message : String(err),
+    });
     ctx.metrics.redirectFailures += 1;
   }
   const publishedAt = new Date(hit.created_at_i * 1000).toISOString();

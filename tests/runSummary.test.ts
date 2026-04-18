@@ -258,6 +258,7 @@ describe("renderWeeklySummary", () => {
       status: "published",
       availableDays: ["2026-04-13", "2026-04-14", "2026-04-15"],
       missingDays: ["2026-04-16"],
+      corruptDays: [],
       timings: { loadDays: 12, buildDigest: 6, publish: 900, totalMs: 920 },
       ...over,
     };
