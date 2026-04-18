@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
@@ -88,6 +88,89 @@ describe("RedditCollector (public fallback)", () => {
     // cutoff well in the future → everything filtered
     const out = await c.fetch(ctxWith({}, Date.parse("2030-01-01")));
     expect(out).toEqual([]);
+  });
+});
+
+// Failure-mode coverage (cycle-2 polish audit AC2): realistic upstream
+// failures at the per-subreddit boundary must NOT block sibling subreddits
+// from contributing. The collector's contract is "best-effort across sub-
+// reddits", not "all-or-nothing".
+describe("RedditCollector — per-subreddit failure isolation", () => {
+  it("captures a 429 with Retry-After as a partialFailure (subreddit scope)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl: typeof fetch = async () =>
+        new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "120" },
+        });
+      const c = new RedditCollector({
+        fetchImpl,
+        resolveImpl: async (u) => ({ url: u }),
+        subreddits: ["LocalLLaMA"],
+      });
+      const ctx = ctxWith({});
+      const items = await c.fetch(ctx);
+      expect(items).toEqual([]);
+      expect(ctx.metrics.partialFailures).toHaveLength(1);
+      expect(ctx.metrics.partialFailures[0]!.scope).toBe("LocalLLaMA");
+      expect(ctx.metrics.partialFailures[0]!.error).toContain("429");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("captures a 404 bogus subreddit as a partialFailure (not an uncaught)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl: typeof fetch = async () =>
+        new Response("not found", { status: 404 });
+      const c = new RedditCollector({
+        fetchImpl,
+        resolveImpl: async (u) => ({ url: u }),
+        subreddits: ["DoesNotExistXYZ"],
+      });
+      const ctx = ctxWith({});
+      const items = await c.fetch(ctx);
+      expect(items).toEqual([]);
+      expect(ctx.metrics.partialFailures).toHaveLength(1);
+      expect(ctx.metrics.partialFailures[0]!.scope).toBe("DoesNotExistXYZ");
+      expect(ctx.metrics.partialFailures[0]!.error).toContain("404");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("one subreddit succeeds while another fails (healthy sub still contributes)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl: typeof fetch = async (u0) => {
+        const u = String(u0);
+        if (u.includes("/r/Broken/")) {
+          return new Response("boom", { status: 503 });
+        }
+        return new Response(LISTING, { status: 200 });
+      };
+      const c = new RedditCollector({
+        fetchImpl,
+        resolveImpl: async (u) => ({ url: u }),
+        subreddits: ["Broken", "LocalLLaMA"],
+      });
+      const ctx = ctxWith({});
+      const items = await c.fetch(ctx);
+      // Healthy sub contributes at least one non-stickied/non-self post
+      // (the fixture has exactly one such post).
+      expect(items.length).toBe(1);
+      expect(items[0]!.metadata).toMatchObject({
+        source: "reddit",
+        subreddit: "LocalLLaMA",
+      });
+      // Failure from the other sub is captured, not swallowed.
+      expect(ctx.metrics.partialFailures).toHaveLength(1);
+      expect(ctx.metrics.partialFailures[0]!.scope).toBe("Broken");
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

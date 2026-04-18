@@ -50,14 +50,37 @@ export async function fetchHnRaw(
     numericFilters: `created_at_i>${cutoffSec}`,
     hitsPerPage: String(hitsPerPage),
   });
-  const res = await fetchImpl(`${HN_ALGOLIA_ENDPOINT}?${params.toString()}`, {
+  const requestUrl = `${HN_ALGOLIA_ENDPOINT}?${params.toString()}`;
+  const res = await fetchImpl(requestUrl, {
     signal: ctx.abortSignal,
     headers: { accept: "application/json" },
   });
   if (!res.ok) {
+    // Log URL + status once before throwing so rate-limit / 5xx debugging
+    // is never blind. `Retry-After` is surfaced when present (common on 429).
+    const retryAfter = res.headers.get("retry-after") ?? undefined;
+    log.warn("hn algolia non-2xx", {
+      source: "hn",
+      url: requestUrl,
+      status: res.status,
+      ...(retryAfter ? { retryAfter } : {}),
+    });
     throw new Error(`hn algolia http ${res.status}`);
   }
-  const json = await res.json();
+  let json: unknown;
+  try {
+    json = await res.json();
+  } catch (err) {
+    // Malformed JSON body (HTML error page leaked, truncated stream, etc.).
+    // Surface URL + error so an operator can reproduce the exact upstream
+    // response without grepping the stack trace.
+    log.warn("hn algolia malformed json body", {
+      source: "hn",
+      url: requestUrl,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
   return HnResponseSchema.parse(json).hits;
 }
 

@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  symlinkSync,
   writeFileSync,
   rmSync,
 } from "node:fs";
@@ -96,6 +97,52 @@ describe("findUnpublished", () => {
   it("ignores non-date directories", () => {
     mkdirSync(path.join(root, "issues", "README"), { recursive: true });
     expect(findUnpublished(root, "2026-04-18")).toEqual([]);
+  });
+
+  // Disk-corruption edge cases (cycle-2 polish audit AC5). In the wild we
+  // have observed: a zero-byte .published sentinel (fs sync killed before
+  // the first write flushed), a truncated items.json (runner OOM mid-write),
+  // and an unreadable prior-day directory (stale chmod from a manual op).
+  // The orchestrator must tolerate each without aborting today's run.
+  it("treats a zero-byte .published sentinel as 'published' (not an orphan)", () => {
+    const dir = path.join(root, "issues", "2026-04-17");
+    mkdirSync(dir);
+    writeFileSync(path.join(dir, "issue.md"), "# test");
+    writeFileSync(path.join(dir, ".published"), ""); // zero bytes
+    // A present-but-empty sentinel still signals "publish happened" — the
+    // file system's existence check, not its content, is the source of truth.
+    // This prevents a wedged partial write from triggering a duplicate send.
+    expect(findUnpublished(root, "2026-04-18")).toEqual([]);
+  });
+
+  it("tolerates an unstat-able prior-day entry (symlink loop → ELOOP) and skips with a warn", () => {
+    // Simulates a disk-corruption scenario where a directory entry can be
+    // *listed* (readdir) but not *stat-ed* (EACCES / ELOOP / EPERM). We use
+    // a self-referencing symlink because it is cross-platform and does not
+    // require elevated privileges to produce. The orphan-detection must not
+    // crash: the bad entry is skipped with a warn, sibling days still work.
+    const badDate = "2026-04-15";
+    const goodDate = "2026-04-17";
+    // Self-referencing symlink — stat follows links and hits ELOOP.
+    symlinkSync(
+      path.join(root, "issues", badDate),
+      path.join(root, "issues", badDate),
+    );
+    mkdirSync(path.join(root, "issues", goodDate));
+    writeFileSync(path.join(root, "issues", goodDate, "issue.md"), "# ok");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const out = findUnpublished(root, "2026-04-18");
+      expect(out.map((d) => d.runDate)).toEqual([goodDate]);
+      const warnOutput = warnSpy.mock.calls
+        .flat()
+        .map((v) => (typeof v === "string" ? v : JSON.stringify(v)))
+        .join("\n");
+      expect(warnOutput).toContain("stat failed for prior day dir");
+      expect(warnOutput).toContain(badDate);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("returns prior days in ascending date order so oldest is recovered first", () => {
@@ -231,6 +278,40 @@ describe("runBackfill (re-publish)", () => {
       expect(result.attempted).toBe(1);
       expect(result.failed).toBe(1);
       expect(result.succeeded).toBe(0);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
+  it("surfaces a truncated items.json (mid-object) as ArchiveParseError with the runDate", async () => {
+    // Simulates the classic OOM-during-write symptom: file exists, prefix is
+    // valid-looking JSON, but the object is cut off mid-value. JSON.parse
+    // must reject and the failure must be non-blocking with the runDate
+    // pinned in the message so the operator can locate the corrupt archive.
+    const dir = path.join(root, "issues", "2026-04-17");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "issue.md"), "# orphan");
+    writeFileSync(
+      path.join(dir, "items.json"),
+      '{"runDate":"2026-04-17","items":[{"id":"hn-0","source":"hn","title":"t","url":"https://example.com/a","sc',
+    );
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const publisher: Publisher = {
+        async publish() {
+          return { id: "em_noop", attempts: 0 };
+        },
+      };
+      const result = await runBackfill(root, "2026-04-18", {
+        dryRun: false,
+        publisher,
+      });
+      expect(result.attempted).toBe(1);
+      expect(result.failed).toBe(1);
+      expect(result.succeeded).toBe(0);
+      const logged = errSpy.mock.calls.flat().join("\n");
+      expect(logged).toContain("2026-04-17");
+      expect(logged).toContain("items.json parse failed");
     } finally {
       errSpy.mockRestore();
     }

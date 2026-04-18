@@ -70,6 +70,83 @@ describe("RssCollector", () => {
     expect(atomItem?.title).toBe("Claude structured outputs GA");
   });
 
+  // Failure-mode coverage (cycle-2 polish audit AC3). Real RSS feeds can
+  // return: malformed XML (CDN error page), a structurally-valid feed with
+  // zero <item>/<entry>, or a mix of good and broken entries. None of these
+  // should abort the collector or lose the good entries.
+  it("returns [] when the feed body is unparseable XML", async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response("<html>CDN error: upstream timeout</html>", { status: 200 });
+    const c = new RssCollector({
+      fetchImpl,
+      resolveImpl: async (u) => ({ url: u }),
+      feeds: ["https://broken.example/feed"],
+    });
+    const ctx = makeCtx();
+    const items = await c.fetch(ctx);
+    expect(items).toEqual([]);
+    // Unparseable XML is tolerated by parseFeedXml (returns []), so the
+    // collector logs nothing to partialFailures — this is "empty feed",
+    // not "fetch error".
+    expect(ctx.metrics.partialFailures).toEqual([]);
+  });
+
+  it("returns [] when the feed is structurally valid but has zero items", async () => {
+    const EMPTY_RSS = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>empty</title><link>https://x</link><description>none</description></channel></rss>`;
+    const fetchImpl: typeof fetch = async () =>
+      new Response(EMPTY_RSS, { status: 200 });
+    const c = new RssCollector({
+      fetchImpl,
+      resolveImpl: async (u) => ({ url: u }),
+      feeds: ["https://example.com/feed.xml"],
+    });
+    const items = await c.fetch(makeCtx());
+    expect(items).toEqual([]);
+  });
+
+  it("keeps good items when one item in the feed is malformed (missing link/title)", async () => {
+    const MIXED_RSS = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Mixed</title>
+    <link>https://example.com/</link>
+    <description>mixed</description>
+    <item>
+      <title>Good Item</title>
+      <link>https://example.com/good</link>
+      <guid>https://example.com/good</guid>
+      <pubDate>Sat, 18 Apr 2026 05:00:00 GMT</pubDate>
+      <dc:creator>Author A</dc:creator>
+    </item>
+    <item>
+      <!-- malformed: no title, no link -->
+      <pubDate>Sat, 18 Apr 2026 05:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Another Good</title>
+      <link>https://example.com/another</link>
+      <guid>https://example.com/another</guid>
+      <pubDate>Sat, 18 Apr 2026 06:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>`;
+    const fetchImpl: typeof fetch = async () =>
+      new Response(MIXED_RSS, { status: 200 });
+    const c = new RssCollector({
+      fetchImpl,
+      resolveImpl: async (u) => ({ url: u }),
+      feeds: ["https://example.com/feed.xml"],
+    });
+    const items = await c.fetch(makeCtx(Date.parse("2026-04-17T00:00:00Z")));
+    expect(items.length).toBe(2);
+    const urls = items.map((i) => i.url).sort();
+    expect(urls).toEqual([
+      "https://example.com/another",
+      "https://example.com/good",
+    ]);
+  });
+
   it("tolerates one feed failing and still returns others", async () => {
     const fetchImpl: typeof fetch = async (u0) => {
       const u = String(u0);

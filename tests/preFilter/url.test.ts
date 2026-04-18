@@ -101,6 +101,52 @@ describe("normalizeUrl", () => {
     ).toBe("https://example.com/p");
   });
 
+  // Edge-case coverage (cycle-2 polish audit AC4). These shapes appear in
+  // the wild (IDN domains in EU newsletter feeds, percent-encoded slashes
+  // from analytics redirects, mixed-case hosts from hand-edited OPML) and
+  // must not crash or split dedup keys.
+  it("preserves double-slash paths verbatim (URL spec: empty path segment is legal)", () => {
+    // Two URLs that differ only in a '//' path segment are treated as distinct
+    // resources by servers; normalization must not silently merge them.
+    const a = normalizeUrl("https://example.com//path");
+    const b = normalizeUrl("https://example.com/path");
+    expect(a).toBe("https://example.com//path");
+    expect(b).toBe("https://example.com/path");
+    expect(a).not.toBe(b);
+  });
+
+  it("punycodes IDN hosts so Unicode and ASCII forms dedup to one key", () => {
+    const unicode = normalizeUrl("https://münchen.de/news");
+    const punycode = normalizeUrl("https://xn--mnchen-3ya.de/news");
+    expect(unicode).not.toBeNull();
+    expect(unicode).toBe(punycode);
+    // Host must be in lowercase canonical (ASCII) form.
+    expect(unicode!).toContain("xn--mnchen-3ya.de");
+  });
+
+  it("strips fragments containing emoji without corrupting the URL", () => {
+    expect(normalizeUrl("https://example.com/post#🚀-section")).toBe(
+      "https://example.com/post",
+    );
+  });
+
+  it("preserves percent-encoded reserved chars (%2F) inside query values", () => {
+    // %2F must survive normalization — it's semantically different from '/'
+    // in path-style query values (git refs, object keys, etc). `path` is
+    // chosen as the key here because `ref` is on the tracking-strip list.
+    const out = normalizeUrl("https://example.com/api?path=refs%2Fheads%2Fmain");
+    expect(out).toBe("https://example.com/api?path=refs%2Fheads%2Fmain");
+  });
+
+  it("mixed-case host with default port canonicalizes to lowercase host without port", () => {
+    expect(normalizeUrl("https://EXAMPLE.COM:443/Foo")).toBe(
+      "https://example.com/Foo",
+    );
+    expect(normalizeUrl("HTTP://Example.Com:80/x")).toBe(
+      "http://example.com/x",
+    );
+  });
+
   it("collapses two URLs that differ only in tracking + casing to the same key", () => {
     const a = normalizeUrl(
       "https://blog.example.com/article-x?utm_source=hn&utm_medium=link",

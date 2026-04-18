@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { HnCollector } from "../../src/collectors/hn.js";
 import type { CollectorContext } from "../../src/collectors/types.js";
 import { makeCollectorMetrics } from "../../src/collectors/types.js";
@@ -111,6 +111,86 @@ describe("HnCollector", () => {
     expect(items.length).toBe(20);
     expect(peak).toBeGreaterThan(1); // ran in parallel
     expect(peak).toBeLessThanOrEqual(6); // respected limit
+  });
+
+  // Failure-mode coverage (cycle-2 polish audit AC1):
+  // every upstream failure we actually see in production must return without
+  // silently losing context. Each test asserts: no unhandled crash at the
+  // collector boundary, metrics remain correct, and the failure is logged
+  // exactly once with the request URL so an operator can reproduce.
+
+  it("returns [] on an empty-hits response (quiet HN day)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl = async () =>
+        new Response(JSON.stringify({ hits: [] }), { status: 200 });
+      const c = new HnCollector({ fetchImpl, resolveImpl: async (u) => ({ url: u }) });
+      const ctx = makeCtx();
+      const items = await c.fetch(ctx);
+      expect(items).toEqual([]);
+      expect(ctx.metrics.redirectFailures).toBe(0);
+      expect(ctx.metrics.partialFailures).toEqual([]);
+      // Empty-hits is NOT a failure — no warn annotation should fire.
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("throws on 429 and logs once with URL + Retry-After", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl: typeof fetch = async () =>
+        new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "60" },
+        });
+      const c = new HnCollector({ fetchImpl, resolveImpl: async (u) => ({ url: u }) });
+      const ctx = makeCtx();
+      await expect(c.fetch(ctx)).rejects.toThrow(/429/);
+      // Metrics unchanged — redirect/partial counters are for per-item issues.
+      expect(ctx.metrics.redirectFailures).toBe(0);
+      expect(ctx.metrics.partialFailures).toEqual([]);
+      // Exactly one structured log line (pair of writes: annotation + json)
+      // emitted by log.warn. It must carry the Algolia URL and the 429 code.
+      const annotations = warnSpy.mock.calls
+        .map((c) => String(c[0] ?? ""))
+        .filter((s) => s.startsWith("::warning::"));
+      expect(annotations).toHaveLength(1);
+      const payloads = warnSpy.mock.calls
+        .map((c) => String(c[0] ?? ""))
+        .filter((s) => s.includes("\"msg\":\"hn algolia non-2xx\""));
+      expect(payloads).toHaveLength(1);
+      const payload = payloads[0]!;
+      expect(payload).toContain("hn.algolia.com");
+      expect(payload).toContain("\"status\":429");
+      expect(payload).toContain("\"retryAfter\":\"60\"");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("throws on malformed JSON body and logs once with URL", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl: typeof fetch = async () =>
+        new Response("<html>oops upstream proxy error</html>", {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      const c = new HnCollector({ fetchImpl, resolveImpl: async (u) => ({ url: u }) });
+      const ctx = makeCtx();
+      await expect(c.fetch(ctx)).rejects.toThrow();
+      expect(ctx.metrics.redirectFailures).toBe(0);
+      expect(ctx.metrics.partialFailures).toEqual([]);
+      const payloads = warnSpy.mock.calls
+        .map((c) => String(c[0] ?? ""))
+        .filter((s) => s.includes("\"msg\":\"hn algolia malformed json body\""));
+      expect(payloads).toHaveLength(1);
+      expect(payloads[0]!).toContain("hn.algolia.com");
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   it("records a sourceUrl when the resolver redirects", async () => {

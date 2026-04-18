@@ -42,7 +42,19 @@ export function findUnpublished(
     if (!isValidRunDate(entry)) continue;
     if (entry >= currentRunDate) continue;
     const dir = path.join(issuesDir, entry);
-    const stat = statSync(dir, { throwIfNoEntry: false });
+    let stat: ReturnType<typeof statSync> | undefined;
+    try {
+      stat = statSync(dir, { throwIfNoEntry: false });
+    } catch (err) {
+      // EACCES / EPERM on a single prior-day dir must not abort detection of
+      // the other orphan days. Skip this entry with a loud warning so the
+      // operator can fix permissions without the cron silently passing.
+      log.warn("backfill: stat failed for prior day dir (skipping)", {
+        runDate: entry,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
     if (!stat || !stat.isDirectory()) continue;
     const issueMd = path.join(dir, "issue.md");
     const published = path.join(dir, ".published");
