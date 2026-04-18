@@ -3,6 +3,7 @@ export { MockCurator } from "./mockCurator.js";
 export {
   ClaudeCurator,
   CountInvariantError,
+  CostCeilingError,
   CurationRecordSchema,
   CurationResponseSchema,
   chunkItems,

@@ -18,19 +18,41 @@ export interface AnthropicClientOptions {
   readonly maxTokens?: number;
   // Exposed for tests; wraps the single SDK call we make.
   readonly messagesParse?: MessagesParseFn;
+  // Test-only escape hatch: the SDK's zodOutputFormat helper runs against
+  // zod v4 internals but our project schemas are zod v3 — the call works
+  // at runtime (the prod SDK bundles its own zod) but throws when invoked
+  // inside the vitest process. Tests pass a stub format to avoid the call.
+  readonly outputFormat?: unknown;
+}
+
+// System is passed as a content-block array so we can attach
+// `cache_control: { type: "ephemeral" }` to the (stable) system prompt.
+// Anthropic caches the block for ~5 minutes — subsequent chunk calls within
+// the same run hit the cache and return `cache_read_input_tokens > 0`.
+export interface SystemBlock {
+  readonly type: "text";
+  readonly text: string;
+  readonly cache_control?: { readonly type: "ephemeral" };
 }
 
 export interface MessagesParseArgs {
   readonly model: string;
   readonly max_tokens: number;
-  readonly system: string;
+  readonly system: readonly SystemBlock[];
   readonly messages: Array<{ role: "user"; content: string }>;
   readonly output_config: { format: unknown };
 }
 
+export interface MessagesParseUsage {
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cache_read_input_tokens?: number;
+  readonly cache_creation_input_tokens?: number;
+}
+
 export interface MessagesParseResult {
   readonly parsed_output: unknown;
-  readonly usage: { readonly input_tokens: number; readonly output_tokens: number };
+  readonly usage: MessagesParseUsage;
 }
 
 export type MessagesParseFn = (
@@ -80,10 +102,12 @@ export class AnthropicCurationClient implements CurationClient {
   private readonly messagesParse: MessagesParseFn;
   private readonly model: string;
   private readonly maxTokens: number;
+  private readonly outputFormatOverride: unknown;
 
   constructor(opts: AnthropicClientOptions = {}) {
     this.model = opts.model ?? DEFAULT_MODEL;
     this.maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
+    this.outputFormatOverride = opts.outputFormat;
     if (opts.messagesParse) {
       this.messagesParse = opts.messagesParse;
     } else {
@@ -107,19 +131,34 @@ export class AnthropicCurationClient implements CurationClient {
     rawItems: readonly RawItem[];
   }): Promise<CurationCallResult> {
     const userContent = formatItemsPayload(args.rawItems);
+    const format =
+      this.outputFormatOverride ?? zodOutputFormat(CurationResponseSchema);
     const result = await this.messagesParse({
       model: this.model,
       max_tokens: this.maxTokens,
-      system: args.systemPrompt,
+      system: [
+        {
+          type: "text",
+          text: args.systemPrompt,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
       messages: [{ role: "user", content: userContent }],
-      output_config: { format: zodOutputFormat(CurationResponseSchema) },
+      output_config: { format },
     });
 
     const parsed = CurationResponseSchema.parse(result.parsed_output);
-    return {
+    const out: CurationCallResult = {
       records: parsed.items,
       inputTokens: result.usage.input_tokens,
       outputTokens: result.usage.output_tokens,
+      ...(result.usage.cache_read_input_tokens !== undefined
+        ? { cacheReadInputTokens: result.usage.cache_read_input_tokens }
+        : {}),
+      ...(result.usage.cache_creation_input_tokens !== undefined
+        ? { cacheCreationInputTokens: result.usage.cache_creation_input_tokens }
+        : {}),
     };
+    return out;
   }
 }

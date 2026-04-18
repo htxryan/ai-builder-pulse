@@ -9,6 +9,10 @@ export interface CuratorMetrics {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly estimatedUsd: number;
+  // Cache telemetry — populated by clients that report Anthropic cache
+  // accounting. Undefined when the client did not return usage data.
+  readonly cacheReadInputTokens?: number;
+  readonly cacheCreationInputTokens?: number;
 }
 
 export interface Curator {

@@ -1,0 +1,115 @@
+import { describe, it, expect } from "vitest";
+import { AnthropicCurationClient } from "../../src/curator/anthropicClient.js";
+import type {
+  MessagesParseArgs,
+  MessagesParseResult,
+} from "../../src/curator/anthropicClient.js";
+import type { RawItem } from "../../src/types.js";
+
+function raw(id: string): RawItem {
+  return {
+    id,
+    source: "hn",
+    title: `title-${id}`,
+    url: `https://example.com/${id}`,
+    score: 1,
+    publishedAt: "2026-04-18T05:00:00.000Z",
+    metadata: { source: "hn", points: 10 },
+  };
+}
+
+describe("AnthropicCurationClient", () => {
+  it("O-03: attaches cache_control ephemeral to the system block", async () => {
+    const captured: MessagesParseArgs[] = [];
+    const client = new AnthropicCurationClient({
+      outputFormat: { type: "stub" },
+      messagesParse: async (args): Promise<MessagesParseResult> => {
+        captured.push(args);
+        return {
+          parsed_output: {
+            items: args.messages[0]!.content.includes("id: a")
+              ? [
+                  {
+                    id: "a",
+                    category: "Tools & Launches",
+                    relevanceScore: 0.5,
+                    keep: true,
+                    description:
+                      "A valid description that meets the minimum-length requirement for Zod parse in curation.",
+                  },
+                ]
+              : [],
+          },
+          usage: { input_tokens: 100, output_tokens: 50 },
+        };
+      },
+    });
+
+    await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
+
+    expect(captured.length).toBe(1);
+    const { system } = captured[0]!;
+    expect(Array.isArray(system)).toBe(true);
+    expect(system.length).toBe(1);
+    expect(system[0]!.type).toBe("text");
+    expect(system[0]!.text).toBe("SYS");
+    expect(system[0]!.cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("propagates cache_read_input_tokens when present in usage", async () => {
+    const client = new AnthropicCurationClient({
+      outputFormat: { type: "stub" },
+      messagesParse: async (): Promise<MessagesParseResult> => ({
+        parsed_output: {
+          items: [
+            {
+              id: "a",
+              category: "Tools & Launches",
+              relevanceScore: 0.5,
+              keep: true,
+              description:
+                "A valid description that meets the minimum-length requirement for Zod parse in curation.",
+            },
+          ],
+        },
+        usage: {
+          input_tokens: 200,
+          output_tokens: 50,
+          cache_read_input_tokens: 150,
+          cache_creation_input_tokens: 25,
+        },
+      }),
+    });
+
+    const r = await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
+    expect(r.cacheReadInputTokens).toBe(150);
+    expect(r.cacheCreationInputTokens).toBe(25);
+    expect(r.inputTokens).toBe(200);
+    expect(r.outputTokens).toBe(50);
+  });
+
+  it("leaves cache fields undefined when usage omits them", async () => {
+    const client = new AnthropicCurationClient({
+      outputFormat: { type: "stub" },
+      messagesParse: async (): Promise<MessagesParseResult> => ({
+        parsed_output: {
+          items: [
+            {
+              id: "a",
+              category: "Tools & Launches",
+              relevanceScore: 0.5,
+              keep: true,
+              description:
+                "A valid description that meets the minimum-length requirement for Zod parse in curation.",
+            },
+          ],
+        },
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }),
+    });
+
+    const r = await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
+    expect(r.cacheReadInputTokens).toBeUndefined();
+    expect(r.cacheCreationInputTokens).toBeUndefined();
+  });
+});

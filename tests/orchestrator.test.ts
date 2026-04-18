@@ -451,4 +451,52 @@ describe("runOrchestrator", () => {
     expect(r.status).toBe("empty_skip");
     expect(publishCalls).toBe(0);
   });
+
+  it("ORCHESTRATOR_TIMEOUT_MS: global timeout yields failed/orchestrator_timeout (AC-cost/perf)", async () => {
+    const slowCurator = {
+      async curate() {
+        await new Promise((r) => setTimeout(r, 2_000));
+        return [];
+      },
+      lastMetrics: () => undefined,
+    };
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", ORCHESTRATOR_TIMEOUT_MS: "100" },
+      fetchAll: fixtureFetch,
+      curator: slowCurator,
+    });
+    expect(r.status).toBe("failed");
+    expect(r.reason).toBe("orchestrator_timeout");
+    expect(r.timings.totalMs).toBeDefined();
+    expect(r.timings.totalMs!).toBeGreaterThanOrEqual(100);
+    expect(r.timings.totalMs!).toBeLessThan(1_500);
+  });
+
+  it("cost_ceiling: curator CostCeilingError maps to failed/cost_ceiling", async () => {
+    const costingCurator = {
+      async curate() {
+        const { CostCeilingError } = await import(
+          "../src/curator/claudeCurator.js"
+        );
+        throw new CostCeilingError(2.5, 1.0, "total");
+      },
+      lastMetrics: () => ({
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        estimatedUsd: 18.0,
+      }),
+    };
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", MIN_SOURCES: "2", MIN_ITEMS_TO_PUBLISH: "1" },
+      fetchAll: fixtureFetch,
+      curator: costingCurator,
+    });
+    expect(r.status).toBe("failed");
+    expect(r.reason).toBe("cost_ceiling");
+    expect(r.curatorMetrics?.estimatedUsd).toBe(18.0);
+  });
 });

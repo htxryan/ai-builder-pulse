@@ -6,6 +6,7 @@ import { MockCurator, type Curator } from "./curator/mockCurator.js";
 import {
   ClaudeCurator,
   AnthropicCurationClient,
+  CostCeilingError,
 } from "./curator/index.js";
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
@@ -98,6 +99,8 @@ export interface OrchestratorResult {
 
 const DEFAULT_MIN_ITEMS = 5;
 const DEFAULT_MIN_SOURCES = 2;
+// 12 min — leaves a 3 min safety margin under GHA's 15 min job cap.
+const DEFAULT_ORCHESTRATOR_TIMEOUT_MS = 12 * 60 * 1000;
 
 function parsePositiveInt(
   raw: string | undefined,
@@ -109,6 +112,21 @@ function parsePositiveInt(
   if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
     throw new Error(
       `Invalid env ${name}=${raw} (expected positive integer >= 1)`,
+    );
+  }
+  return n;
+}
+
+function parsePositiveNumber(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+): number {
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(
+      `Invalid env ${name}=${raw} (expected positive number > 0)`,
     );
   }
   return n;
@@ -130,6 +148,7 @@ function selectCurator(env: NodeJS.ProcessEnv): Curator {
             "CURATOR_CHUNK_THRESHOLD",
           )
         : 50,
+      maxUsd: parsePositiveNumber(env.CURATOR_MAX_USD, 1.0, "CURATOR_MAX_USD"),
     });
   }
   return new MockCurator();
@@ -139,14 +158,70 @@ export async function runOrchestrator(
   opts: OrchestratorOptions = {},
 ): Promise<OrchestratorResult> {
   const env = opts.env ?? process.env;
+  const timeoutMs = parsePositiveInt(
+    env.ORCHESTRATOR_TIMEOUT_MS,
+    DEFAULT_ORCHESTRATOR_TIMEOUT_MS,
+    "ORCHESTRATOR_TIMEOUT_MS",
+  );
   const now = opts.now ?? new Date();
   const runDate = deriveRunDate(now);
+  const runId = makeRunId(now);
+  // Bind runId NOW so a timeout log-line still carries it. The inner body
+  // re-binds (no-op) and re-registers secrets.
+  bindRunId(runId);
+  const t0 = Date.now();
+
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<"__timeout__">((resolve) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      resolve("__timeout__");
+    }, timeoutMs);
+  });
+
+  try {
+    const winner = await Promise.race([
+      runOrchestratorInner(opts, { runDate, runId, t0 }),
+      timeoutPromise,
+    ]);
+    if (winner === "__timeout__") {
+      log.error("orchestrator global timeout exceeded", {
+        runId,
+        runDate,
+        timeoutMs,
+        elapsedMs: Date.now() - t0,
+      });
+      return {
+        runDate,
+        runId,
+        status: "failed",
+        reason: "orchestrator_timeout",
+        timings: { totalMs: Date.now() - t0 },
+      };
+    }
+    return winner;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+interface InnerPreRun {
+  readonly runDate: string;
+  readonly runId: string;
+  readonly t0: number;
+}
+
+async function runOrchestratorInner(
+  opts: OrchestratorOptions,
+  pre: InnerPreRun,
+): Promise<OrchestratorResult> {
+  const env = opts.env ?? process.env;
+  const { runDate, runId, t0 } = pre;
   const repoRoot = opts.repoRoot ?? process.cwd();
   const dryRun = env.DRY_RUN === "1";
-  const runId = makeRunId(now);
   bindRunId(runId);
   registerSecretsFromEnv(env);
-  const t0 = Date.now();
   const timings: StageTimings = {};
   const stage = async <T>(name: keyof StageTimings, fn: () => Promise<T>): Promise<T> => {
     const start = Date.now();
@@ -317,6 +392,21 @@ export async function runOrchestrator(
   try {
     scored = await stage("curate", () => curator.curate(filteredItems));
   } catch (err) {
+    if (err instanceof CostCeilingError) {
+      log.error("curator cost ceiling exceeded", {
+        estimatedUsd: err.estimatedUsd,
+        maxUsd: err.maxUsd,
+        scope: err.scope,
+        chunkIdx: err.chunkIdx,
+      });
+      return done({
+        runDate,
+        status: "failed",
+        reason: "cost_ceiling",
+        summary: filteredSummary,
+        curatorMetrics: curator.lastMetrics?.(),
+      });
+    }
     log.error("curator failed (E-05/Un-05)", {
       error: err instanceof Error ? err.message : String(err),
     });

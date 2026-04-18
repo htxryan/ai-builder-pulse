@@ -181,6 +181,49 @@ is a must-not-ship condition.
 3. If verified hallucination, do not bypass. Re-run; if it repeats,
    investigate the prompt or lower `relevanceScore` threshold.
 
+### `failed` (`reason=cost_ceiling`)
+
+**Meaning.** The `ClaudeCurator` aborted because estimated cost exceeded
+`CURATOR_MAX_USD` (default `1.00`). Two sub-cases:
+
+- **scope=chunk**: a single chunk's cost exceeded `CURATOR_MAX_USD /
+  chunkCount * 2`. The chunk is NOT retried — a 2× per-chunk overrun
+  indicates a prompt or pricing regression, not a transient blip.
+- **scope=total**: the sum across all chunks exceeded the ceiling even
+  though individual chunks stayed under their per-chunk share.
+
+**Subscriber impact.** None.
+
+**Troubleshooting.**
+1. Grep the log for `"cost ceiling exceeded"` — the line carries
+   `estimatedUsd`, `maxUsd`, `scope`, and (for chunk scope) `chunkIdx`.
+2. Confirm the curator's input volume is within normal range (check
+   `curator start` line's `totalItems`). An HN spike day is a legitimate
+   trigger — raise `CURATOR_MAX_USD` temporarily if the signal is real.
+3. If volume is normal, suspect prompt drift (unexpectedly large system
+   prompt) or upstream pricing change. Inspect `src/curator/prompt.ts` and
+   the Anthropic pricing page.
+
+### `failed` (`reason=orchestrator_timeout`)
+
+**Meaning.** The orchestrator's global wall-time exceeded
+`ORCHESTRATOR_TIMEOUT_MS` (default `720000` = 12 min). The run is aborted
+and the per-stage timings emitted so far are surfaced in the job summary.
+
+**Subscriber impact.** None — publish may or may not have started. If the
+timeout fires mid-publish, the sentinel will not have been written, and
+the E-06 backfill on the next cron will detect any orphaned archive.
+
+**Troubleshooting.**
+1. Check the partial stage timings in the job summary — a stage with a
+   disproportionate `duration` vs. its SLA (below) is the offender.
+2. Common causes: a slow Anthropic response (curator stage blowing past
+   its SLA), a slow publisher (Buttondown incident), or a slow upstream
+   collector. The per-stage SLAs below bound expected ranges.
+3. If the timeout fires consistently on a normal day, raise
+   `ORCHESTRATOR_TIMEOUT_MS` — but keep at least a 3 min safety margin
+   under GHA's 15 min job cap.
+
 ### `failed` (`reason=publish_failed`)
 
 **Meaning.** Publisher exhausted retries. Archive and rendered artifacts
@@ -374,6 +417,44 @@ cron fire, somebody published this runDate manually earlier; confirm via
 | Per-source `Raw`    | Collector item count before pre-filter          | Freshness / volume trend|
 | Per-source `Kept`   | Pre-filter survivors (E3)                       | Dedup / freshness health|
 | Stage timings       | `stage(name, fn)` wrapper in orchestrator.ts    | Latency regressions     |
+
+## Per-stage wall-time SLAs
+
+The orchestrator surfaces per-stage timings in every job summary and in
+the `OrchestratorResult.timings` object. The table below lists the
+expected upper bound for each stage on a **normal-volume day**. A run
+that blows past these SLAs is the typical cause of
+`orchestrator_timeout` — use these numbers to triage which stage is
+slow before adjusting `ORCHESTRATOR_TIMEOUT_MS`.
+
+| Stage            | Expected (p50) | Upper bound (p95) | Typical cause of overrun                               |
+|------------------|----------------|-------------------|--------------------------------------------------------|
+| `collect`        | 5 – 20 s       | 60 s              | RSS/HN/Reddit upstream slowness; per-collector timeout |
+| `preFilter`      | < 100 ms       | 500 ms            | Pathological URL input — rarely slow                   |
+| `curate`         | 10 – 45 s      | 180 s             | Anthropic latency / 529; large chunk count             |
+| `linkIntegrity`  | < 50 ms        | 200 ms            | Pure in-memory; overrun → bug                          |
+| `render`         | < 100 ms       | 500 ms            | Pure; large kept-set → still fast                      |
+| `publish`        | 1 – 5 s        | 30 s              | Buttondown retry budget (5xx); rate limit              |
+| `archive`        | < 200 ms       | 1 s               | fs atomicity (issue.md + items.json + .published)      |
+| **Total run**    | 20 – 90 s      | 5 min             | Upper-bound = `ORCHESTRATOR_TIMEOUT_MS / 2` target     |
+
+**Reading the timings.** If `curate` dominates (e.g. > 3 min) and
+`cacheReadInputTokens` is 0, the O-03 prompt cache was a miss — check
+whether the system prompt changed between consecutive chunks, and that
+the `cache_control` block is still in `anthropicClient.ts`. A 5-minute
+TTL means the cache warms up on chunk 2+ of the same run.
+
+**Budget ceiling defaults.**
+
+| Env                        | Default   | Purpose                                      |
+|----------------------------|-----------|----------------------------------------------|
+| `ORCHESTRATOR_TIMEOUT_MS`  | `720000`  | Global wall-time cap (12 min, 3 min < GHA)   |
+| `CURATOR_MAX_USD`          | `1.00`    | Hard cost ceiling per `curate()` call        |
+| `CURATOR_CHUNK_THRESHOLD`  | `50`      | Items per Claude call before splitting       |
+
+Chunk concurrency is capped internally at `min(chunkCount, 3)` — no env
+knob today. The cap protects against Anthropic's org-level rate limits
+on large-batch days.
 
 ## When to open a new runbook entry
 

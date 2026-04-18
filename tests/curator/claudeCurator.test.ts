@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ClaudeCurator,
   CountInvariantError,
+  CostCeilingError,
   chunkItems,
   type CurationCallResult,
   type CurationClient,
@@ -219,6 +220,144 @@ describe("ClaudeCurator", () => {
       expect(s.category).toBeTruthy();
       expect(typeof s.keep).toBe("boolean");
     }
+  });
+
+  it("cost ceiling: per-chunk estimate exceeding budget share aborts with CostCeilingError", async () => {
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        // 400k input + 100k output tokens @ defaults 3/15 per Mtok
+        // = 0.4 × 3 + 0.1 × 15 = 1.2 + 1.5 = $2.7 — far above
+        // the per-chunk ceiling of (0.001 / 1) * 2 = $0.002.
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 400_000,
+          outputTokens: 100_000,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({ client, maxUsd: 0.001 });
+    await expect(cur.curate([raw("a"), raw("b")])).rejects.toBeInstanceOf(
+      CostCeilingError,
+    );
+  });
+
+  it("cost ceiling: total exceeding maxUsd aborts even when per-chunk stays under", async () => {
+    // Four chunks of 2 items each. Per-chunk ceiling = (0.1 / 4) * 2 = $0.05.
+    // Each chunk: 10k in + 1k out = 10/1M*3 + 1/1M*15 = $0.045 (under per-chunk
+    // ceiling). Total across 4 chunks = $0.18 > $0.1 maxUsd → total check fires.
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 10_000,
+          outputTokens: 1_000,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({
+      client,
+      chunkThreshold: 2,
+      maxUsd: 0.1,
+    });
+    const items = Array.from({ length: 8 }, (_, i) => raw(`i${i}`));
+    await expect(cur.curate(items)).rejects.toBeInstanceOf(CostCeilingError);
+  });
+
+  it("cost ceiling: passing run under budget populates estimatedUsd", async () => {
+    const client = new DeterministicClient();
+    const cur = new ClaudeCurator({ client, maxUsd: 10 });
+    const items = Array.from({ length: 5 }, (_, i) => raw(`i${i}`));
+    await cur.curate(items);
+    const m = cur.lastMetrics();
+    expect(m).toBeDefined();
+    expect(m!.estimatedUsd).toBeGreaterThanOrEqual(0);
+  });
+
+  it("cost ceiling: not retried (hard fail)", async () => {
+    let calls = 0;
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        calls += 1;
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 1_000_000,
+          outputTokens: 1_000_000,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({ client, maxUsd: 0.001, maxRetries: 3 });
+    await expect(cur.curate([raw("a")])).rejects.toBeInstanceOf(
+      CostCeilingError,
+    );
+    expect(calls).toBe(1);
+  });
+
+  it("chunk concurrency: capped at 3 even with 6 chunks", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 20));
+        inFlight -= 1;
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 10,
+          outputTokens: 5,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({ client, chunkThreshold: 10 });
+    const items = Array.from({ length: 60 }, (_, i) => raw(`i${i}`));
+    const out = await cur.curate(items);
+    expect(out.length).toBe(60);
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it("chunk concurrency: respects explicit override", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 10));
+        inFlight -= 1;
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 10,
+          outputTokens: 5,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({
+      client,
+      chunkThreshold: 10,
+      maxChunkConcurrency: 1,
+    });
+    const items = Array.from({ length: 30 }, (_, i) => raw(`i${i}`));
+    await cur.curate(items);
+    expect(peak).toBe(1);
+  });
+
+  it("cache telemetry: aggregated across chunks when client reports it", async () => {
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadInputTokens: 1_200,
+          cacheCreationInputTokens: 200,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({ client, chunkThreshold: 2 });
+    await cur.curate([raw("a"), raw("b"), raw("c"), raw("d")]);
+    const m = cur.lastMetrics();
+    expect(m?.cacheReadInputTokens).toBe(2_400);
+    expect(m?.cacheCreationInputTokens).toBe(400);
   });
 
   it("detects cross-chunk id collision", async () => {
