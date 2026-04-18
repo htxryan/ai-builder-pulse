@@ -12,15 +12,31 @@ function tempRepo(): string {
 const fixedNow = new Date("2026-04-18T06:07:00.000Z");
 
 const fixtureFetch = async () => {
-  const items: RawItem[] = Array.from({ length: 10 }, (_, i) => ({
-    id: `hn-${i}`,
-    source: "hn" as const,
-    title: `title ${i}`,
-    url: `https://example.com/${i}`,
-    score: 10,
-    publishedAt: "2026-04-18T05:00:00.000Z",
-    metadata: { source: "hn" as const, points: 10 },
-  }));
+  const items: RawItem[] = Array.from({ length: 10 }, (_, i) => {
+    const useGht = i >= 5;
+    return useGht
+      ? {
+          id: `gh-${i}`,
+          source: "github-trending" as const,
+          title: `title ${i}`,
+          url: `https://github.com/owner${i}/repo${i}`,
+          score: 10,
+          publishedAt: "2026-04-18T05:00:00.000Z",
+          metadata: {
+            source: "github-trending" as const,
+            repoFullName: `owner${i}/repo${i}`,
+          },
+        }
+      : {
+          id: `hn-${i}`,
+          source: "hn" as const,
+          title: `title ${i}`,
+          url: `https://example.com/${i}`,
+          score: 10,
+          publishedAt: "2026-04-18T05:00:00.000Z",
+          metadata: { source: "hn" as const, points: 10 },
+        };
+  });
   const summary: SourceSummary = {
     hn: { count: 5, status: "ok" },
     "github-trending": { count: 5, status: "ok" },
@@ -130,6 +146,111 @@ describe("runOrchestrator", () => {
     });
     expect(r.runDate).toBe("2026-04-18");
     expect(["dry_run", "empty_skip"].includes(r.status)).toBe(true);
+  });
+
+  it("S-05 floor evaluated AFTER pre-filter — items collapsed to one source skip", async () => {
+    // Two sources collected items, but every github-trending item is a user
+    // profile and therefore dropped by Un-02. Only `hn` contributes after
+    // pre-filter, so S-05 should skip even though collectorSummary reports 2.
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", MIN_SOURCES: "2", MIN_ITEMS_TO_PUBLISH: "1" },
+      fetchAll: async () => ({
+        items: [
+          {
+            id: "hn-1",
+            source: "hn" as const,
+            title: "t",
+            url: "https://example.com/post-1",
+            score: 1,
+            publishedAt: "2026-04-18T01:00:00.000Z",
+            metadata: { source: "hn" as const },
+          },
+          {
+            id: "gh-bad",
+            source: "github-trending" as const,
+            title: "profile",
+            url: "https://github.com/torvalds",
+            score: 1,
+            publishedAt: "2026-04-18T01:00:00.000Z",
+            metadata: {
+              source: "github-trending" as const,
+              repoFullName: "torvalds/linux",
+            },
+          },
+        ],
+        summary: {
+          hn: { count: 1, status: "ok" },
+          "github-trending": { count: 1, status: "ok" },
+        } as SourceSummary,
+      }),
+    });
+    expect(r.status).toBe("source_floor_skip");
+    expect(r.reason).toBe("S-05");
+  });
+
+  it("pre-filter dedups items with UTM-only difference before curation", async () => {
+    // hn-dup1 + hn-dup2 share the same canonical URL → collapse to one.
+    // gh-other comes from a different source so the floor (2) is met.
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", MIN_SOURCES: "2", MIN_ITEMS_TO_PUBLISH: "1" },
+      fetchAll: async () => ({
+        items: [
+          {
+            id: "hn-dup1",
+            source: "hn" as const,
+            title: "t",
+            url: "https://example.com/post-1?utm_source=hn",
+            score: 1,
+            publishedAt: "2026-04-18T01:00:00.000Z",
+            metadata: { source: "hn" as const },
+          },
+          {
+            id: "hn-dup2",
+            source: "hn" as const,
+            title: "t",
+            url: "https://example.com/post-1?utm_medium=link",
+            score: 1,
+            publishedAt: "2026-04-18T01:00:00.000Z",
+            metadata: { source: "hn" as const },
+          },
+          {
+            id: "gh-other",
+            source: "github-trending" as const,
+            title: "t2",
+            url: "https://github.com/owner/repo",
+            score: 1,
+            publishedAt: "2026-04-18T01:00:00.000Z",
+            metadata: {
+              source: "github-trending" as const,
+              repoFullName: "owner/repo",
+            },
+          },
+        ],
+        summary: {
+          hn: { count: 2, status: "ok" },
+          "github-trending": { count: 1, status: "ok" },
+        } as SourceSummary,
+      }),
+    });
+    expect(r.status).toBe("dry_run");
+    // 3 items in, 1 dedup-collapsed → 2 curated.
+    expect(r.scored?.length).toBe(2);
+  });
+
+  it("threads filtered summary with keptCount on the result", async () => {
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", MIN_SOURCES: "2", MIN_ITEMS_TO_PUBLISH: "1" },
+      fetchAll: fixtureFetch,
+    });
+    expect(r.summary).toBeDefined();
+    expect(r.summary?.hn?.keptCount).toBe(5);
+    expect(r.summary?.["github-trending"]?.keptCount).toBe(5);
   });
 
   it("E-06 backfill detection emits warning non-blocking", async () => {

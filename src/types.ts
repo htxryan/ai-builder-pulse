@@ -86,6 +86,10 @@ export const SourceSummarySchema = z.record(
     count: z.number().int().nonnegative(),
     status: z.enum(["ok", "skipped", "error", "timeout"]),
     error: z.string().optional(),
+    // Items from this source that survived pre-filter (E3). Optional because
+    // pre-filter has not yet run when collectors first emit their summary;
+    // populated by applyPreFilter.
+    keptCount: z.number().int().nonnegative().optional(),
   }),
 );
 export type SourceSummary = z.infer<typeof SourceSummarySchema>;

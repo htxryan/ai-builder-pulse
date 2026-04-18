@@ -5,6 +5,7 @@ import { mockFetchAll } from "./collectors/mock.js";
 import { MockCurator, type Curator } from "./curator/mockCurator.js";
 import { log } from "./log.js";
 import { runBackfill } from "./backfill.js";
+import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
 import { deriveRunDate } from "./runDate.js";
 import type { RawItem, RunContext, ScoredItem, SourceSummary } from "./types.js";
 
@@ -31,6 +32,9 @@ export interface OrchestratorResult {
     | "failed";
   reason?: string;
   scored?: ScoredItem[];
+  // Per-source summary including pre-filter `keptCount`. Populated whenever
+  // the run progressed past collection. Consumed by E5/E6 for items.json.
+  summary?: SourceSummary;
 }
 
 const DEFAULT_MIN_ITEMS = 5;
@@ -125,21 +129,43 @@ export async function runOrchestrator(
     return { runDate, status: "failed", reason: "fetch_failed" };
   }
 
-  // S-05 source floor
-  const okSources = Object.values(summary).filter((s) => s?.status === "ok").length;
-  if (okSources < ctx.minSources) {
+  // E3 pre-filter: freshness, URL-shape, normalized-URL dedup. Runs BEFORE
+  // S-05 so the floor reflects sources that contribute *usable* items, not
+  // just sources that returned without erroring.
+  const preFiltered = applyPreFilter(items, runDate, summary);
+  log.info("pre-filter complete", {
+    inputCount: preFiltered.stats.inputCount,
+    freshnessDropped: preFiltered.stats.freshnessDropped,
+    invalidDateDropped: preFiltered.stats.invalidDateDropped,
+    shapeDropped: preFiltered.stats.shapeDropped,
+    duplicateDropped: preFiltered.stats.duplicateDropped,
+    outputCount: preFiltered.stats.outputCount,
+  });
+  const filteredItems = preFiltered.items;
+  const filteredSummary = preFiltered.summary;
+
+  // S-05 source floor — evaluated on unique sources in the *post-filter* set
+  // so a source that returned items but had them all filtered out does not
+  // count toward the floor.
+  const contributingSources = uniqueSources(filteredItems).size;
+  if (contributingSources < ctx.minSources) {
     log.warn("S-05 source floor not met", {
-      okSources,
+      contributingSources,
       minSources: ctx.minSources,
     });
-    return { runDate, status: "source_floor_skip", reason: "S-05" };
+    return {
+      runDate,
+      status: "source_floor_skip",
+      reason: "S-05",
+      summary: filteredSummary,
+    };
   }
 
   // Curate (Mock in E1)
   const curator = opts.curator ?? new MockCurator();
   let scored: ScoredItem[];
   try {
-    scored = await curator.curate(items);
+    scored = await curator.curate(filteredItems);
   } catch (err) {
     log.error("curator failed (E-05/Un-05)", {
       error: err instanceof Error ? err.message : String(err),
@@ -159,12 +185,18 @@ export async function runOrchestrator(
       kept: kept.length,
       min: ctx.minItemsToPublish,
     });
-    return { runDate, status: "empty_skip", reason: "S-02", scored };
+    return {
+      runDate,
+      status: "empty_skip",
+      reason: "S-02",
+      scored,
+      summary: filteredSummary,
+    };
   }
 
   if (dryRun) {
     log.info("[DRY_RUN] would publish", { runDate, itemCount: kept.length });
-    return { runDate, status: "dry_run", scored };
+    return { runDate, status: "dry_run", scored, summary: filteredSummary };
   }
 
   // E1 does not wire real Publisher/Archivist — those land in E5/E6.
@@ -179,5 +211,6 @@ export async function runOrchestrator(
     status: "stub_no_publisher",
     reason: "publisher_not_implemented",
     scored,
+    summary: filteredSummary,
   };
 }
