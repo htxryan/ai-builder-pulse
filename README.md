@@ -16,7 +16,8 @@ DRY_RUN=1 pnpm start  # run orchestrator without publishing
 
 | Name | Purpose |
 |------|---------|
-| `DRY_RUN` | `1` = skip Buttondown POST, git commit, `.published` write. Bypasses S-03 sentinel check. |
+| `MODE` | `daily` (default) runs the daily pipeline; `weekly` runs the E-02 rollup over the last 7 days' `issues/*/items.json`. |
+| `DRY_RUN` | `1` = skip Buttondown POST, archive write, commit. Bypasses S-03 sentinel check. Honored by both daily and weekly. |
 | `MIN_ITEMS_TO_PUBLISH` | Minimum kept ScoredItems to publish (S-02). Default 5. |
 | `MIN_SOURCES` | Minimum successful collectors required (S-05). Default 2. |
 | `ANTHROPIC_API_KEY` | Claude API key (curator). |
@@ -39,4 +40,4 @@ See:
 - `docs/specs/ai-builder-pulse.md` — system spec (EARS + contracts)
 - `docs/specs/ai-builder-pulse-decomposition.md` — epic decomposition
 
-Epic E1 (this milestone) delivers: TS scaffold, Orchestrator entry with immutable `runDate` (UTC), Mock Curator pass-through, three GHA workflows (daily cron 06:07 UTC, weekly Monday, keepalive). Real collectors (E2), real Claude curation (E4), Buttondown publish (E5), git persistence (E6) ship in later epics.
+Epic E1 delivered the TS scaffold, Orchestrator, Mock Curator, and the daily/weekly/keepalive GHA workflows. Subsequent epics layered in real collectors (E2), pre-filter (E3), Claude curation (E4), Buttondown publishing (E5), and the Archivist + weekly digest + gitleaks scan + git push (E6).

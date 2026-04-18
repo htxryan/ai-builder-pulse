@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import path from "node:path";
+import { existsSync } from "node:fs";
+import { archiveRun, sentinelPath as archiveSentinelPath } from "./archivist/index.js";
 import { fetchAll as realFetchAll } from "./collectors/index.js";
 import { mockFetchAll } from "./collectors/mock.js";
 import { MockCurator, type Curator } from "./curator/mockCurator.js";
@@ -82,27 +82,8 @@ function parsePositiveInt(
   return n;
 }
 
-function sentinelPath(repoRoot: string, runDate: string): string {
-  return path.join(repoRoot, "issues", runDate, ".published");
-}
-
 function checkSentinel(repoRoot: string, runDate: string): boolean {
-  return existsSync(sentinelPath(repoRoot, runDate));
-}
-
-// Write the S-03 sentinel after a successful publish so a manual GHA re-run
-// of the same `runDate` is short-circuited at the top of `runOrchestrator`.
-// E6 (Archivist) will eventually own this alongside the issue .md/.json
-// artifacts; until then, the orchestrator writes the bare sentinel itself
-// so S-03 is actually load-bearing in production.
-function writeSentinel(
-  repoRoot: string,
-  runDate: string,
-  publishId: string,
-): void {
-  const dir = path.join(repoRoot, "issues", runDate);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(sentinelPath(repoRoot, runDate), `${publishId}\n`);
+  return existsSync(archiveSentinelPath(repoRoot, runDate));
 }
 
 function selectCurator(env: NodeJS.ProcessEnv): Curator {
@@ -375,14 +356,22 @@ export async function runOrchestrator(
     attempts: publishResult.attempts,
   });
 
-  // S-03 sentinel write — must come AFTER the publish succeeds. A failure
-  // here is non-fatal (the email already went out); we log loudly so a
-  // re-run can be detected by an operator. E6 will fold this into a richer
-  // archivist that also writes issue.md/issue.json.
+  // E6 Archivist: write issue.md + items.json + .published atomically AFTER
+  // the Buttondown POST succeeds (C7 contract). A failure here is non-fatal
+  // to the run's exit code — the email already went out — but we log loudly
+  // (::error::) so the next run's E-06 backfill scan picks it up (Un-06).
   try {
-    writeSentinel(repoRoot, runDate, publishResult.id);
+    archiveRun({
+      runDate,
+      repoRoot,
+      rendered,
+      scored,
+      summary: filteredSummary,
+      publishId: publishResult.id,
+      publishedAt: new Date().toISOString(),
+    });
   } catch (err) {
-    log.warn("S-03 sentinel write failed (publish already succeeded)", {
+    log.error("archivist write failed (publish already succeeded — Un-06 divergence)", {
       runDate,
       publishId: publishResult.id,
       error: err instanceof Error ? err.message : String(err),

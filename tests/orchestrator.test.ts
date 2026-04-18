@@ -342,6 +342,67 @@ describe("runOrchestrator", () => {
     expect(readFileSync(sentinel, "utf8").trim()).toBe("em_persisted");
   });
 
+  it("E6 Archivist writes issue.md + items.json + .published after successful publish (U-06)", async () => {
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch,
+      publisher: {
+        publish: async () => ({ id: "em_archived", attempts: 1 }),
+      },
+    });
+    expect(r.status).toBe("published");
+    const dir = path.join(root, "issues", "2026-04-18");
+    expect(existsSync(path.join(dir, "issue.md"))).toBe(true);
+    expect(existsSync(path.join(dir, "items.json"))).toBe(true);
+    expect(existsSync(path.join(dir, ".published"))).toBe(true);
+
+    const items = JSON.parse(readFileSync(path.join(dir, "items.json"), "utf8"));
+    expect(items.runDate).toBe("2026-04-18");
+    expect(items.publishId).toBe("em_archived");
+    expect(items.sourceSummary).toBeDefined();
+    expect(items.sourceSummary.hn.keptCount).toBe(5);
+    expect(Array.isArray(items.items)).toBe(true);
+    expect(items.items.length).toBeGreaterThan(0);
+
+    // issue.md mirrors the rendered body verbatim (C5).
+    const issueMd = readFileSync(path.join(dir, "issue.md"), "utf8");
+    expect(issueMd).toBe(r.rendered!.body);
+  });
+
+  it("E6 DRY_RUN does NOT write archive artifacts (O-02)", async () => {
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch,
+    });
+    expect(r.status).toBe("dry_run");
+    const dir = path.join(root, "issues", "2026-04-18");
+    expect(existsSync(path.join(dir, "issue.md"))).toBe(false);
+    expect(existsSync(path.join(dir, "items.json"))).toBe(false);
+    expect(existsSync(path.join(dir, ".published"))).toBe(false);
+  });
+
+  it("E6 publish_failed does NOT write .published sentinel (Un-06 precondition)", async () => {
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch,
+      publisher: {
+        publish: async () => {
+          throw new Error("buttondown 500");
+        },
+      },
+    });
+    expect(r.status).toBe("failed");
+    expect(r.reason).toBe("publish_failed");
+    const sentinel = path.join(root, "issues", "2026-04-18", ".published");
+    expect(existsSync(sentinel)).toBe(false);
+  });
+
   it("E5 fails fast when BUTTONDOWN_API_KEY missing in non-DRY_RUN", async () => {
     // No publisher injected, no DRY_RUN, no key → must fail BEFORE collection
     // (no fetchAll call), saving Claude budget.

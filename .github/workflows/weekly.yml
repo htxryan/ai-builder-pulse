@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "30 14 * * 1"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Set to 1 to skip publish + commit"
+        required: false
+        default: "0"
 
 concurrency:
   group: weekly-digest
@@ -18,12 +23,14 @@ jobs:
     timeout-minutes: 15
     env:
       MODE: weekly
+      DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -32,5 +39,31 @@ jobs:
           node-version: "20"
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-      - name: Weekly digest (placeholder — wired in E6)
-        run: echo "weekly digest not yet implemented (E6 owns this)"
+      - run: pnpm lint
+      - run: pnpm test
+      - name: Run weekly digest
+        run: pnpm start
+      - name: Commit weekly digest
+        id: commit
+        if: ${{ env.DRY_RUN != '1' }}
+        run: |
+          set -euo pipefail
+          git config user.name "ai-builder-pulse-bot"
+          git config user.email "ai-builder-pulse-bot@users.noreply.github.com"
+          git add weekly/ || true
+          if git diff --cached --quiet; then
+            echo "::notice::no weekly digest changes to commit"
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          WEEK_ID="$(date -u +%G-W%V)"
+          git commit -m "archive: weekly digest $WEEK_ID"
+          echo "committed=true" >> "$GITHUB_OUTPUT"
+      - name: gitleaks secret scan
+        if: ${{ steps.commit.outputs.committed == 'true' }}
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push weekly digest
+        if: ${{ steps.commit.outputs.committed == 'true' }}
+        run: git push origin HEAD:${GITHUB_REF_NAME}
