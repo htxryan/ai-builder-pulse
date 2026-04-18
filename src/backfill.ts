@@ -21,6 +21,7 @@ import { renderIssue } from "./renderer/index.js";
 import { writeFileAtomic } from "./fsAtomic.js";
 import { sentinelPath, itemsJsonPath } from "./archivist/index.js";
 import { ScoredItemSchema } from "./types.js";
+import { ArchiveParseError } from "./errors.js";
 // Type-only import breaks the circular between backfill.ts ⇄ orchestrator.ts
 // (orchestrator owns `Publisher`; backfill needs its shape to call .publish).
 import type { Publisher } from "./orchestrator.js";
@@ -157,11 +158,23 @@ async function backfillOneDay(
       `items.json missing for ${runDate}; cannot reconstruct kept items for re-publish`,
     );
   }
-  const raw = JSON.parse(readFileSync(itemsJsonAbs, "utf8")) as unknown;
+  // Syntactic JSON errors and zod shape errors are both surfaced as
+  // ArchiveParseError so the file path survives the rethrow (operator needs
+  // it to locate the corrupt archive).
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(itemsJsonAbs, "utf8"));
+  } catch (cause) {
+    throw new ArchiveParseError(
+      `items.json parse failed for ${runDate}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { filePath: itemsJsonAbs, stage: "backfill", cause },
+    );
+  }
   const parsed = ItemsJsonSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new Error(
+    throw new ArchiveParseError(
       `items.json shape invalid for ${runDate}: ${parsed.error.issues[0]?.message ?? "unknown"}`,
+      { filePath: itemsJsonAbs, stage: "backfill", cause: parsed.error },
     );
   }
   const kept = parsed.data.items.filter((it) => it.keep);

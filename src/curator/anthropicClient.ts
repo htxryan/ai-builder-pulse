@@ -118,11 +118,12 @@ export class AnthropicCurationClient implements CurationClient {
         );
       }
       const sdk = new Anthropic({ apiKey });
-      this.messagesParse = (args) =>
-        // The SDK's messages.parse accepts output_config.format from zodOutputFormat
-        // and attaches parsed_output to the response. We type the call loosely to
-        // avoid pinning to internal helper generics.
-        (sdk.messages.parse as unknown as MessagesParseFn)(args);
+      // External type-boundary cast: `sdk.messages.parse` is generic over
+      // internal SDK `MessageCreateParamsNonStreaming` + helper types that
+      // do not structurally simplify to our testable `MessagesParseFn`
+      // adapter shape. The runtime call is unchanged — the cast isolates
+      // the SDK's generic surface from the rest of the pipeline.
+      this.messagesParse = sdk.messages.parse.bind(sdk.messages) as unknown as MessagesParseFn;
     }
   }
 

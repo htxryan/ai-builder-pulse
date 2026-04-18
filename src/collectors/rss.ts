@@ -23,30 +23,39 @@ const parser = new XMLParser({
   textNodeName: "_text",
 });
 
-function asArray<T>(v: T | T[] | undefined): T[] {
-  if (v === undefined) return [];
+// Normalises fast-xml-parser output where a node may be a single value, an
+// array, or undefined — callers treat the result uniformly as a list.
+function asArray(v: unknown): unknown[] {
+  if (v === undefined || v === null) return [];
   return Array.isArray(v) ? v : [v];
+}
+
+// Type guard: narrows unknown to a keyed object view. Avoids per-callsite
+// `as Record<string, unknown>` assertions after a plain typeof check.
+function asRecord(v: unknown): Record<string, unknown> | undefined {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : undefined;
 }
 
 function textOf(node: unknown): string | undefined {
   if (node === undefined || node === null) return undefined;
   if (typeof node === "string") return node;
   if (typeof node === "number") return String(node);
-  if (typeof node === "object") {
-    const asObj = node as Record<string, unknown>;
-    if (typeof asObj._text === "string") return asObj._text;
-    if (typeof asObj["#text"] === "string") return asObj["#text"] as string;
+  const obj = asRecord(node);
+  if (obj) {
+    if (typeof obj._text === "string") return obj._text;
+    if (typeof obj["#text"] === "string") return obj["#text"];
   }
   return undefined;
 }
 
 function atomLink(linkNode: unknown): string | undefined {
   if (!linkNode) return undefined;
-  const nodes = asArray(linkNode) as unknown[];
-  for (const n of nodes) {
+  for (const n of asArray(linkNode)) {
     if (typeof n === "string") return n;
-    if (typeof n === "object" && n) {
-      const o = n as Record<string, unknown>;
+    const o = asRecord(n);
+    if (o) {
       const rel = o["@_rel"];
       const href = o["@_href"];
       if ((rel === undefined || rel === "alternate") && typeof href === "string") {
@@ -72,15 +81,16 @@ export function parseFeedXml(xml: string, feedUrl: string): ParsedFeedEntry[] {
   } catch {
     return [];
   }
-  if (!obj || typeof obj !== "object") return [];
-  const root = obj as Record<string, unknown>;
+  const root = asRecord(obj);
+  if (!root) return [];
 
   // Atom: <feed><entry>...</entry></feed>
-  if (root.feed && typeof root.feed === "object") {
-    const feed = root.feed as Record<string, unknown>;
-    const entries = asArray(feed.entry as unknown) as Array<Record<string, unknown>>;
+  const feed = asRecord(root.feed);
+  if (feed) {
     const out: ParsedFeedEntry[] = [];
-    for (const e of entries) {
+    for (const entryRaw of asArray(feed.entry)) {
+      const e = asRecord(entryRaw);
+      if (!e) continue;
       const id = textOf(e.id) ?? textOf(e.guid) ?? atomLink(e.link);
       const title = textOf(e.title);
       const link = atomLink(e.link);
@@ -90,11 +100,11 @@ export function parseFeedXml(xml: string, feedUrl: string): ParsedFeedEntry[] {
       const ms = Date.parse(published);
       if (!Number.isFinite(ms)) continue;
       let author: string | undefined;
-      const authorNode = e.author;
-      if (authorNode && typeof authorNode === "object") {
-        author = textOf((authorNode as Record<string, unknown>).name);
-      } else if (typeof authorNode === "string") {
-        author = authorNode;
+      const authorRecord = asRecord(e.author);
+      if (authorRecord) {
+        author = textOf(authorRecord.name);
+      } else if (typeof e.author === "string") {
+        author = e.author;
       }
       const entry: ParsedFeedEntry = author
         ? { id: `rss-${hashFeedId(feedUrl, id)}`, title, url: link, publishedMs: ms, author }
@@ -105,13 +115,14 @@ export function parseFeedXml(xml: string, feedUrl: string): ParsedFeedEntry[] {
   }
 
   // RSS 2.0: <rss><channel><item>...</item></channel></rss>
-  if (root.rss && typeof root.rss === "object") {
-    const rss = root.rss as Record<string, unknown>;
-    const channel = rss.channel as Record<string, unknown> | undefined;
+  const rss = asRecord(root.rss);
+  if (rss) {
+    const channel = asRecord(rss.channel);
     if (!channel) return [];
-    const items = asArray(channel.item as unknown) as Array<Record<string, unknown>>;
     const out: ParsedFeedEntry[] = [];
-    for (const it of items) {
+    for (const itemRaw of asArray(channel.item)) {
+      const it = asRecord(itemRaw);
+      if (!it) continue;
       const link = textOf(it.link);
       const title = textOf(it.title);
       const pub = textOf(it.pubDate) ?? textOf(it["dc:date"]);

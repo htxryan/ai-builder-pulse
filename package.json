@@ -13,13 +13,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:casts": "node scripts/check-unchecked-casts.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
     "fast-xml-parser": "^5.7.1",
     "node-html-parser": "^7.1.0",
-    "zod": "^3.23.8"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",

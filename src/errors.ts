@@ -36,6 +36,26 @@ export class OrchestratorStageError extends Error {
   }
 }
 
+// Thrown when an archive JSON file (items.json) is unreadable: either the
+// file's JSON is syntactically invalid (JSON.parse throws) or the parsed
+// shape fails zod validation. Carries `filePath` so operators can locate the
+// offending archive without grepping the trace.
+export class ArchiveParseError extends OrchestratorStageError {
+  readonly filePath: string;
+  constructor(
+    message: string,
+    opts: { filePath: string; stage: Stage; cause?: unknown },
+  ) {
+    super(message, {
+      stage: opts.stage,
+      retryable: false,
+      cause: opts.cause,
+    });
+    this.name = "ArchiveParseError";
+    this.filePath = opts.filePath;
+  }
+}
+
 // Coarse redirect/fetch failure class. Used by collector redirect-resolve
 // logging so operators can `grep errClass=timeout` across one run. Keep the
 // set small — the point is triage, not forensic categorization.

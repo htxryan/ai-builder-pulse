@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  ArchiveParseError,
   OrchestratorStageError,
   classifyRedirectError,
 } from "../src/errors.js";
@@ -103,5 +104,22 @@ describe("classifyRedirectError", () => {
   it("other fallback", () => {
     expect(classifyRedirectError(new Error("nothing recognizable"))).toBe("other");
     expect(classifyRedirectError("string error")).toBe("other");
+  });
+});
+
+describe("ArchiveParseError", () => {
+  it("carries filePath, stage, and preserves the cause chain", () => {
+    const cause = new SyntaxError("Unexpected token '{' at position 7");
+    const err = new ArchiveParseError("items.json parse failed for 2026-04-17", {
+      filePath: "/tmp/issues/2026-04-17/items.json",
+      stage: "backfill",
+      cause,
+    });
+    expect(err).toBeInstanceOf(OrchestratorStageError);
+    expect(err.name).toBe("ArchiveParseError");
+    expect(err.stage).toBe("backfill");
+    expect(err.retryable).toBe(false);
+    expect(err.filePath).toBe("/tmp/issues/2026-04-17/items.json");
+    expect(err.cause).toBe(cause);
   });
 });

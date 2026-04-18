@@ -22,6 +22,7 @@ import { ScoredItemSchema, type ScoredItem } from "./types.js";
 import { archiveDir, itemsJsonPath, sentinelPath } from "./archivist/index.js";
 import { writeFileAtomic } from "./fsAtomic.js";
 import type { Publisher } from "./orchestrator.js";
+import { ArchiveParseError } from "./errors.js";
 
 const ItemsJsonSchema = z.object({
   runDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -99,11 +100,30 @@ export async function runArchivesFallback(
     };
   }
   const p = itemsJsonPath(repoRoot, sourceRunDate);
-  const raw = JSON.parse(readFileSync(p, "utf8")) as unknown;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(p, "utf8"));
+  } catch (cause) {
+    const err = new ArchiveParseError(
+      `items.json parse failed for ${sourceRunDate}`,
+      { filePath: p, stage: "render", cause },
+    );
+    log.error("archives fallback: prior archive items.json unreadable", {
+      sourceRunDate,
+      filePath: err.filePath,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+    return {
+      status: "failed",
+      sourceRunDate,
+      reason: "archive_invalid",
+    };
+  }
   const parsed = ItemsJsonSchema.safeParse(raw);
   if (!parsed.success) {
     log.error("archives fallback: prior archive items.json invalid", {
       sourceRunDate,
+      filePath: p,
       error: parsed.error.issues[0]?.message,
     });
     return {

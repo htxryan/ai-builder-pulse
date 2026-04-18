@@ -236,6 +236,34 @@ describe("runBackfill (re-publish)", () => {
     }
   });
 
+  it("wraps a syntactically-invalid items.json in ArchiveParseError (filePath attached)", async () => {
+    const dir = path.join(root, "issues", "2026-04-17");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "issue.md"), "# orphan");
+    writeFileSync(path.join(dir, "items.json"), "{not-json"); // corrupt
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const publisher: Publisher = {
+        async publish() {
+          return { id: "em_noop", attempts: 0 };
+        },
+      };
+      const result = await runBackfill(root, "2026-04-18", {
+        dryRun: false,
+        publisher,
+      });
+      // Non-blocking: counted as failed, not thrown past the caller.
+      expect(result.attempted).toBe(1);
+      expect(result.failed).toBe(1);
+      // The error message surfaced to the log must include the file path so
+      // operators can locate the corrupt archive without grepping the trace.
+      const logged = errSpy.mock.calls.flat().join("\n");
+      expect(logged).toContain("items.json parse failed for 2026-04-17");
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+
   it("fails cleanly when publisher is absent (no snowball, no silent skip)", async () => {
     writeOrphan(root, "2026-04-17");
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});

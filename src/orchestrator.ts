@@ -488,8 +488,12 @@ async function runOrchestratorInner(
   // ScoredItem fields. Including the allowlist here would *widen* the gate
   // and let a hallucinated `https://buttondown.com/ai-builder-pulse/...` URL
   // in a Claude description bypass Un-01.
+  // Pass the pre-pre-filter `items` as `preFilterRaw` so violations whose
+  // URL was in the raw collection but got dropped by pre-filter classify as
+  // `dropped_by_pre_filter` (legitimate miss) rather than `not_in_raw_set`
+  // (hallucinated). Still an Un-01 failure either way; the kind aids triage.
   const integrity = await stage("linkIntegrity", async () =>
-    verifyLinkIntegrity(scored, filteredItems, []),
+    verifyLinkIntegrity(scored, filteredItems, [], { preFilterRaw: items }),
   );
   if (!integrity.ok) {
     log.error("Un-01 link-integrity violation", {

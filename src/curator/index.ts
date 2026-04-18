@@ -27,7 +27,9 @@ export {
 } from "./linkIntegrity.js";
 export type {
   LinkIntegrityResult,
+  LinkIntegrityOptions,
   LinkViolation,
+  LinkViolationKind,
   LinkViolationLocation,
 } from "./linkIntegrity.js";
 export { SYSTEM_PROMPT, PROMPT_VERSION } from "./prompt.js";

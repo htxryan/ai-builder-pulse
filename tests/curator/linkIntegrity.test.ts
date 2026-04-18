@@ -53,6 +53,25 @@ describe("verifyLinkIntegrity (C4)", () => {
     expect(r.violations.length).toBe(1);
     expect(r.violations[0]!.location).toBe("url");
     expect(r.violations[0]!.reason).toBe("not_in_raw_set");
+    expect(r.violations[0]!.kind).toBe("not_in_raw_set");
+  });
+
+  it("classifies violations as dropped_by_pre_filter when preFilterRaw has the url", () => {
+    // `raws` is the post-pre-filter set (empty); `preFilterRaw` simulates
+    // the pre-filter collection that included the URL.
+    const scoreds = [scored("a", "https://example.com/dropped")];
+    const preFilter = [raw("a", "https://example.com/dropped")];
+    const r = verifyLinkIntegrity(scoreds, [], [], { preFilterRaw: preFilter });
+    expect(r.ok).toBe(false);
+    expect(r.violations[0]!.kind).toBe("dropped_by_pre_filter");
+    expect(r.violations[0]!.reason).toBe("not_in_raw_set"); // legacy field
+  });
+
+  it("falls back to not_in_raw_set when URL is absent from preFilterRaw too", () => {
+    const scoreds = [scored("a", "https://evil.example.com/fabricated")];
+    const preFilter = [raw("a", "https://example.com/unrelated")];
+    const r = verifyLinkIntegrity(scoreds, [], [], { preFilterRaw: preFilter });
+    expect(r.violations[0]!.kind).toBe("not_in_raw_set");
   });
 
   it("accepts sourceUrl as an alias of url", () => {
@@ -112,6 +131,7 @@ describe("verifyLinkIntegrity (C4)", () => {
     const r = verifyLinkIntegrity(scoreds, raws);
     expect(r.ok).toBe(false);
     expect(r.violations[0]!.reason).toBe("unparseable");
+    expect(r.violations[0]!.kind).toBe("unparseable");
   });
 
   it("handles many scored items efficiently", () => {

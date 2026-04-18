@@ -22,6 +22,7 @@ import {
 } from "./digest.js";
 import { itemsJsonPath } from "../archivist/index.js";
 import { writeFileAtomic } from "../fsAtomic.js";
+import { ArchiveParseError } from "../errors.js";
 
 export interface WeeklyOptions {
   readonly now?: Date;
@@ -83,29 +84,36 @@ type DayLoadResult =
 function loadDay(repoRoot: string, runDate: string): DayLoadResult {
   const p = itemsJsonPath(repoRoot, runDate);
   if (!existsSync(p)) return { kind: "missing" };
-  // Each day is processed in its own try/catch so a single corrupt archive
-  // day does not abort the entire weekly rollup. Both JSON.parse and
-  // ArchivedDaySchema.parse can throw; both must be isolated.
+  // Syntactic JSON failure and zod-shape failure are isolated per-day so a
+  // single corrupt archive does not abort the weekly rollup. Both paths are
+  // wrapped via ArchiveParseError (caught below) so `filePath` is attached
+  // to the warn line for operator triage.
+  let raw: unknown;
   try {
-    const raw = JSON.parse(readFileSync(p, "utf8")) as unknown;
-    const parsed = ArchivedDaySchema.safeParse(raw);
-    if (!parsed.success) {
-      const reason = parsed.error.issues[0]?.message ?? "invalid shape";
-      log.warn("weekly: items.json shape invalid; skipping day", {
-        runDate,
-        error: reason,
-      });
-      return { kind: "corrupt", reason };
-    }
-    return { kind: "ok", day: parsed.data };
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
+    raw = JSON.parse(readFileSync(p, "utf8"));
+  } catch (cause) {
+    const err = new ArchiveParseError(
+      `items.json parse failed for ${runDate}`,
+      { filePath: p, stage: "weekly", cause },
+    );
     log.warn("weekly: items.json unreadable; skipping day", {
       runDate,
+      filePath: err.filePath,
+      error: cause instanceof Error ? cause.message : String(cause),
+    });
+    return { kind: "corrupt", reason: err.message };
+  }
+  const parsed = ArchivedDaySchema.safeParse(raw);
+  if (!parsed.success) {
+    const reason = parsed.error.issues[0]?.message ?? "invalid shape";
+    log.warn("weekly: items.json shape invalid; skipping day", {
+      runDate,
+      filePath: p,
       error: reason,
     });
     return { kind: "corrupt", reason };
   }
+  return { kind: "ok", day: parsed.data };
 }
 
 function defaultPublisher(env: NodeJS.ProcessEnv): Publisher {
