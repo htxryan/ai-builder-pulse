@@ -3,6 +3,11 @@ import path from "node:path";
 import { fetchAll as realFetchAll } from "./collectors/index.js";
 import { mockFetchAll } from "./collectors/mock.js";
 import { MockCurator, type Curator } from "./curator/mockCurator.js";
+import {
+  ClaudeCurator,
+  AnthropicCurationClient,
+} from "./curator/index.js";
+import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import { log } from "./log.js";
 import { runBackfill } from "./backfill.js";
 import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
@@ -57,6 +62,23 @@ function parsePositiveInt(
 
 function checkSentinel(repoRoot: string, runDate: string): boolean {
   return existsSync(path.join(repoRoot, "issues", runDate, ".published"));
+}
+
+function selectCurator(env: NodeJS.ProcessEnv): Curator {
+  const which = (env.CURATOR ?? "mock").toLowerCase();
+  if (which === "claude") {
+    return new ClaudeCurator({
+      client: new AnthropicCurationClient(),
+      chunkThreshold: env.CURATOR_CHUNK_THRESHOLD
+        ? parsePositiveInt(
+            env.CURATOR_CHUNK_THRESHOLD,
+            50,
+            "CURATOR_CHUNK_THRESHOLD",
+          )
+        : 50,
+    });
+  }
+  return new MockCurator();
 }
 
 export async function runOrchestrator(
@@ -162,8 +184,10 @@ export async function runOrchestrator(
     };
   }
 
-  // Curate (Mock in E1)
-  const curator = opts.curator ?? new MockCurator();
+  // Curate — env-selectable:
+  //   CURATOR=mock (default) → MockCurator (E1 pass-through)
+  //   CURATOR=claude         → ClaudeCurator (E4 real Claude call)
+  const curator = opts.curator ?? selectCurator(env);
   let scored: ScoredItem[];
   try {
     scored = await curator.curate(filteredItems);
@@ -173,6 +197,31 @@ export async function runOrchestrator(
     });
     return { runDate, status: "failed", reason: "curator_failed" };
   }
+
+  // E-05 defensive re-check (Curator should have enforced this already).
+  if (scored.length !== filteredItems.length) {
+    log.error("curator count mismatch (E-05)", {
+      expected: filteredItems.length,
+      actual: scored.length,
+    });
+    return { runDate, status: "failed", reason: "E-05" };
+  }
+
+  // Un-01 link-integrity gate. Allowlist is empty here — Renderer (E5) will
+  // add template-URL patterns before it emits markdown. Any URL in Claude
+  // output that does not trace back to a raw item fails the run.
+  const integrity = verifyLinkIntegrity(scored, filteredItems, []);
+  if (!integrity.ok) {
+    log.error("Un-01 link-integrity violation", {
+      violationCount: integrity.violations.length,
+      sample: integrity.violations.slice(0, 5),
+    });
+    return { runDate, status: "failed", reason: "Un-01" };
+  }
+  log.info("link-integrity ok", {
+    checked: integrity.checkedCount,
+    scoredCount: scored.length,
+  });
 
   const kept = scored.filter((s) => s.keep);
   log.info("curation complete", {
