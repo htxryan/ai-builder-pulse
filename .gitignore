@@ -5,3 +5,16 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# Node
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+*.log
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
