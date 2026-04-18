@@ -1,0 +1,32 @@
+{
+  "hits": [
+    {
+      "objectID": "40000001",
+      "title": "Show HN: A new AI coding agent",
+      "url": "https://example.com/ai-agent",
+      "points": 120,
+      "num_comments": 30,
+      "author": "alice",
+      "created_at_i": 1744929600
+    },
+    {
+      "objectID": "40000002",
+      "story_title": "Claude API structured outputs GA",
+      "story_url": "https://example.com/claude-structured",
+      "points": 85,
+      "num_comments": 12,
+      "author": "bob",
+      "created_at_i": 1744930000
+    },
+    {
+      "objectID": "40000003",
+      "title": "Ask HN: Favorite local LLM setup?",
+      "url": null,
+      "points": 22,
+      "num_comments": 17,
+      "author": "carol",
+      "created_at_i": 1744931000
+    }
+  ],
+  "nbHits": 3
+}

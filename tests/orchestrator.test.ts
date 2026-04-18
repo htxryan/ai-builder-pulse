@@ -121,7 +121,12 @@ describe("runOrchestrator", () => {
     const r = await runOrchestrator({
       now: fixedNow,
       repoRoot: root,
-      env: { DRY_RUN: "1", MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      env: {
+        DRY_RUN: "1",
+        MIN_ITEMS_TO_PUBLISH: "1",
+        MIN_SOURCES: "2",
+        USE_MOCK_COLLECTORS: "1",
+      },
     });
     expect(r.runDate).toBe("2026-04-18");
     expect(["dry_run", "empty_skip"].includes(r.status)).toBe(true);

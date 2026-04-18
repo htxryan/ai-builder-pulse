@@ -112,6 +112,7 @@ describe("AC-1 secret non-leakage", () => {
         DRY_RUN: "1",
         MIN_SOURCES: "2",
         MIN_ITEMS_TO_PUBLISH: "1",
+        USE_MOCK_COLLECTORS: "1",
         ...SECRETS,
       },
     });

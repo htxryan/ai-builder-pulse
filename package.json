@@ -17,6 +17,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
+    "fast-xml-parser": "^5.7.1",
+    "node-html-parser": "^7.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Simon Willison's Weblog</title>
+  <link href="https://simonwillison.net/" rel="alternate"/>
+  <updated>2026-04-18T10:00:00Z</updated>
+  <entry>
+    <id>tag:simonwillison.net,2026-04-18:/structured-outputs</id>
+    <title>Claude structured outputs GA</title>
+    <link rel="alternate" href="https://simonwillison.net/2026/Apr/18/structured-outputs/"/>
+    <updated>2026-04-18T09:30:00Z</updated>
+    <published>2026-04-18T09:30:00Z</published>
+    <author><name>Simon Willison</name></author>
+  </entry>
+  <entry>
+    <id>tag:simonwillison.net,2026-04-17:/other-post</id>
+    <title>Older post that should be filtered</title>
+    <link rel="alternate" href="https://simonwillison.net/2026/Apr/17/other/"/>
+    <published>2026-04-16T09:30:00Z</published>
+    <author><name>Simon Willison</name></author>
+  </entry>
+</feed>
