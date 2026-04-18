@@ -128,6 +128,84 @@ describe("publishToButtondown", () => {
     ).rejects.toThrow(/BUTTONDOWN_API_KEY/);
   });
 
+  it("rejects when apiKey contains whitespace or newlines (misconfigured secret)", async () => {
+    await expect(
+      publishToButtondown(ISSUE, { apiKey: "key-with-newline\n" }),
+    ).rejects.toThrow(/whitespace or newlines/);
+    await expect(
+      publishToButtondown(ISSUE, { apiKey: "  padded  " }),
+    ).rejects.toThrow(/whitespace or newlines/);
+  });
+
+  it("aborts a hung request via per-attempt timeout (P2 — no infinite hang)", async () => {
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      // Resolve only when the AbortSignal fires — simulates a connection
+      // that accepts but never responds.
+      await new Promise<void>((resolve, reject) => {
+        const sig = init.signal as AbortSignal | null;
+        if (!sig) return resolve();
+        sig.addEventListener("abort", () => {
+          const e = new Error("aborted");
+          (e as { name: string }).name = "AbortError";
+          reject(e);
+        });
+      });
+      return new Response("", { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      publishToButtondown(ISSUE, {
+        apiKey: "k",
+        fetchImpl,
+        retry: { sleep: noSleep, maxAttempts: 1 },
+        requestTimeoutMs: 5,
+      }),
+    ).rejects.toThrow(/timeout/);
+  });
+
+  it("preserves last-attempt error message after retry exhaustion", async () => {
+    const { fetch } = fakeFetch([
+      { status: 500, body: "boom-1" },
+      { status: 502, body: "boom-2" },
+      { status: 503, body: "boom-3" },
+    ]);
+    try {
+      await publishToButtondown(ISSUE, {
+        apiKey: "k",
+        fetchImpl: fetch,
+        retry: { sleep: noSleep, maxAttempts: 3 },
+      });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PublishError);
+      // The exhausted message must include the LAST attempt's HTTP context
+      // so CI triage can see why retries failed, not just the count.
+      expect((err as Error).message).toMatch(/503/);
+      expect((err as Error).message).toMatch(/boom-3/);
+    }
+  });
+
+  it("scrubs API key from response-body excerpts in error messages (U-07)", async () => {
+    const secret = "sk-leakable-token";
+    // Pathological server echoes the token (auth provider misconfig). The
+    // sanitizer must redact it before it reaches PublishError.message.
+    const { fetch } = fakeFetch([
+      { status: 401, body: `unauthorized: token ${secret} is invalid` },
+    ]);
+    try {
+      await publishToButtondown(ISSUE, {
+        apiKey: secret,
+        fetchImpl: fetch,
+        retry: { sleep: noSleep },
+      });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PublishError);
+      expect((err as Error).message).not.toContain(secret);
+      expect((err as Error).message).toContain("[REDACTED]");
+    }
+  });
+
   it("rejects when response lacks id field", async () => {
     const { fetch } = fakeFetch([{ status: 200, body: JSON.stringify({}) }]);
     await expect(

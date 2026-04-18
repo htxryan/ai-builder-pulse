@@ -151,6 +151,26 @@ describe("renderIssue (C5)", () => {
     expect(integrity.ok).toBe(true);
   });
 
+  it("escapes `[` and `]` inside titles to keep markdown link syntax intact", () => {
+    const r = renderIssue("2026-04-18", [
+      makeScored("a", { title: "React [beta] release [PDF]" }),
+    ]);
+    // The header uses `### [LABEL](URL)`. Unescaped inner `]` would terminate
+    // the label early. Escaped form keeps the literal title in the label.
+    expect(r.body).toContain(
+      "### [React \\[beta\\] release \\[PDF\\]](https://example.com/a)",
+    );
+  });
+
+  it("percent-encodes `)` in URLs so the markdown link destination is balanced", () => {
+    const r = renderIssue("2026-04-18", [
+      makeScored("a", { url: "https://en.wikipedia.org/wiki/Foo_(bar)" }),
+    ]);
+    expect(r.body).toContain(
+      "(https://en.wikipedia.org/wiki/Foo_(bar%29)",
+    );
+  });
+
   it("allowlist matches newsletter home and archive URLs", () => {
     const matchesAny = (url: string): boolean =>
       RENDERER_TEMPLATE_URL_PATTERNS.some((p) => p.test(url));

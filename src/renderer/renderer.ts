@@ -60,8 +60,23 @@ function sourceLabel(item: ScoredItem): string {
   }
 }
 
+// Titles from HN/Reddit/RSS frequently contain `[` and `]` (e.g. `"[PDF] Foo"`,
+// `"React [beta]"`). Inside a markdown link label, an unescaped `]` terminates
+// the label early and the trailing text becomes orphaned/garbled. Escape both
+// brackets so CommonMark renders the literal title.
+function escapeLinkLabel(text: string): string {
+  return text.replace(/[\[\]]/g, (c) => (c === "[" ? "\\[" : "\\]"));
+}
+
+// URL fragment guard: a literal `)` in a URL would close the markdown link's
+// destination. Percent-encode it. We do not touch other URL chars — collectors
+// are expected to deliver canonicalized URLs already.
+function escapeLinkUrl(url: string): string {
+  return url.replace(/\)/g, "%29");
+}
+
 function renderItem(item: ScoredItem): string {
-  const header = `### [${item.title}](${item.url})`;
+  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})`;
   const meta = `*${sourceLabel(item)}*`;
   return `${header}\n${meta}\n\n${item.description}\n`;
 }
@@ -70,7 +85,11 @@ function renderCategorySection(
   category: Category,
   items: readonly ScoredItem[],
 ): string {
-  const rendered = items.map(renderItem).join("\n");
+  // Each `renderItem` already ends with `\n`. Trim trailing newlines on the
+  // joined block so the section + later `sections.push("")` produces exactly
+  // one blank line between sections, not two-or-three (cosmetic in some
+  // markdown clients).
+  const rendered = items.map(renderItem).join("\n").replace(/\n+$/, "");
   return `## ${category}\n\n${rendered}`;
 }
 

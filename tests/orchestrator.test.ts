@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runOrchestrator } from "../src/orchestrator.js";
@@ -324,6 +324,53 @@ describe("runOrchestrator", () => {
     expect(r.status).toBe("failed");
     expect(r.reason).toBe("publish_failed");
     expect(r.rendered).toBeDefined(); // still surfaced for triage
+  });
+
+  it("E5 writes S-03 sentinel after successful publish (idempotency)", async () => {
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch,
+      publisher: {
+        publish: async () => ({ id: "em_persisted", attempts: 1 }),
+      },
+    });
+    expect(r.status).toBe("published");
+    const sentinel = path.join(root, "issues", "2026-04-18", ".published");
+    expect(existsSync(sentinel)).toBe(true);
+    expect(readFileSync(sentinel, "utf8").trim()).toBe("em_persisted");
+  });
+
+  it("E5 fails fast when BUTTONDOWN_API_KEY missing in non-DRY_RUN", async () => {
+    // No publisher injected, no DRY_RUN, no key → must fail BEFORE collection
+    // (no fetchAll call), saving Claude budget.
+    let fetchCalls = 0;
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: async () => {
+        fetchCalls += 1;
+        return fixtureFetch();
+      },
+    });
+    expect(r.status).toBe("failed");
+    expect(r.reason).toBe("missing_api_key");
+    expect(fetchCalls).toBe(0);
+  });
+
+  it("E5 sentinel skip wins over missing-API-key fail-fast (idempotency first)", async () => {
+    const dir = path.join(root, "issues", "2026-04-18");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, ".published"), "em_prior\n");
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: {},
+      fetchAll: fixtureFetch,
+    });
+    expect(r.status).toBe("idempotent_skip");
   });
 
   it("E5 S-02 empty skip does NOT call publisher", async () => {

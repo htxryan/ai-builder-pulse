@@ -7,6 +7,8 @@
 // - A `fetchImpl` override exists so tests can inject a fake fetch without
 //   touching the global. Default is the native `globalThis.fetch` (Node ≥18).
 // - `status: "about_to_send"` publishes immediately per Buttondown's API.
+// - Per-attempt timeout via AbortController so a stuck connection cannot hang
+//   the daily cron until the GHA job-level timeout.
 
 import type { RenderedIssue } from "../renderer/renderer.js";
 import {
@@ -18,12 +20,14 @@ import {
 } from "./retry.js";
 
 const DEFAULT_ENDPOINT = "https://api.buttondown.com/v1/emails";
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface ButtondownPublishOptions {
   readonly apiKey: string;
   readonly endpoint?: string;
   readonly fetchImpl?: typeof fetch;
   readonly retry?: Partial<RetryOptions>;
+  readonly requestTimeoutMs?: number;
   // Buttondown accepts `about_to_send` (immediate) or `scheduled` + a
   // publish_date. Default to immediate for the daily cron.
   readonly status?: "about_to_send" | "draft";
@@ -47,9 +51,10 @@ export class PublishError extends Error {
       status?: number;
       attempts: number;
       terminal: boolean;
+      cause?: unknown;
     },
   ) {
-    super(message);
+    super(message, opts.cause !== undefined ? { cause: opts.cause } : undefined);
     this.name = "PublishError";
     this.status = opts.status;
     this.attempts = opts.attempts;
@@ -57,14 +62,44 @@ export class PublishError extends Error {
   }
 }
 
-async function readBodySafely(resp: Response): Promise<string> {
+function sanitizeForLog(text: string, apiKey: string): string {
+  // Defense-in-depth: even though Buttondown 4xx bodies are not expected to
+  // echo the token, scrub it from any excerpt before it lands in a log line
+  // or PublishError.message (U-07).
+  if (!apiKey) return text;
+  return text.split(apiKey).join("[REDACTED]");
+}
+
+async function readBodySafely(
+  resp: Response,
+  apiKey: string,
+): Promise<string> {
   try {
     const text = await resp.text();
     // Truncate to keep logs bounded and avoid echoing large bodies that could
     // include sensitive context in a misconfigured proxy environment.
-    return text.length > 500 ? `${text.slice(0, 500)}…` : text;
+    const truncated = text.length > 500 ? `${text.slice(0, 500)}…` : text;
+    return sanitizeForLog(truncated, apiKey);
   } catch {
     return "<unreadable>";
+  }
+}
+
+function validateApiKey(apiKey: string): void {
+  // GHA secrets occasionally come with trailing whitespace/newlines from
+  // copy-paste; Node's fetch then throws a confusing "invalid header" error
+  // from inside the retry loop. Reject up front with a clear terminal error.
+  if (!apiKey) {
+    throw new PublishError("BUTTONDOWN_API_KEY not set", {
+      attempts: 0,
+      terminal: true,
+    });
+  }
+  if (/[\r\n]/.test(apiKey) || apiKey.trim() !== apiKey) {
+    throw new PublishError(
+      "BUTTONDOWN_API_KEY contains whitespace or newlines (likely a misconfigured secret)",
+      { attempts: 0, terminal: true },
+    );
   }
 }
 
@@ -72,12 +107,7 @@ export async function publishToButtondown(
   issue: RenderedIssue,
   opts: ButtondownPublishOptions,
 ): Promise<ButtondownPublishResult> {
-  if (!opts.apiKey) {
-    throw new PublishError("BUTTONDOWN_API_KEY not set", {
-      attempts: 0,
-      terminal: true,
-    });
-  }
+  validateApiKey(opts.apiKey);
   const endpoint = opts.endpoint ?? DEFAULT_ENDPOINT;
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== "function") {
@@ -90,6 +120,7 @@ export async function publishToButtondown(
     ...DEFAULT_RETRY_OPTIONS,
     ...(opts.retry ?? {}),
   };
+  const timeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   const body = JSON.stringify({
     subject: issue.subject,
@@ -101,6 +132,8 @@ export async function publishToButtondown(
   try {
     const result = await retry(async (attempt) => {
       attempts = attempt;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
       let resp: Response;
       try {
         resp = await fetchImpl(endpoint, {
@@ -110,38 +143,45 @@ export async function publishToButtondown(
             Authorization: `Token ${opts.apiKey}`,
           },
           body,
+          signal: controller.signal,
         });
       } catch (err) {
-        // Transport-level failure (DNS, TCP reset) — retryable. Strip cause
-        // when re-throwing to avoid dragging secrets into the stack.
-        throw new RetryableError(
-          `buttondown transport error: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+        // Transport-level failure (DNS, TCP reset, abort/timeout) — retryable.
+        // Distinguish abort so the message is actionable.
+        const aborted =
+          (err instanceof Error && err.name === "AbortError") ||
+          controller.signal.aborted;
+        const detail = aborted
+          ? `request timeout after ${timeoutMs}ms`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+        throw new RetryableError(`buttondown transport error: ${detail}`);
+      } finally {
+        clearTimeout(timer);
       }
       if (resp.status >= 500) {
-        const excerpt = await readBodySafely(resp);
-        throw new RetryableError(
-          `buttondown ${resp.status}: ${excerpt}`,
-        );
+        const excerpt = await readBodySafely(resp, opts.apiKey);
+        throw new RetryableError(`buttondown ${resp.status}: ${excerpt}`);
       }
       if (resp.status >= 400) {
-        const excerpt = await readBodySafely(resp);
+        const excerpt = await readBodySafely(resp, opts.apiKey);
         // Terminal — 4xx means our request is wrong. No retry.
-        throw new PublishError(
-          `buttondown ${resp.status}: ${excerpt}`,
-          { status: resp.status, attempts, terminal: true },
-        );
+        throw new PublishError(`buttondown ${resp.status}: ${excerpt}`, {
+          status: resp.status,
+          attempts,
+          terminal: true,
+        });
       }
       const json = (await resp.json().catch(() => null)) as
         | { id?: unknown }
         | null;
       if (!json || typeof json.id !== "string" || json.id.length === 0) {
-        throw new PublishError(
-          `buttondown response missing id field`,
-          { status: resp.status, attempts, terminal: true },
-        );
+        throw new PublishError(`buttondown response missing id field`, {
+          status: resp.status,
+          attempts,
+          terminal: true,
+        });
       }
       return { id: json.id, attempts, endpoint };
     }, retryOpts);
@@ -149,16 +189,24 @@ export async function publishToButtondown(
   } catch (err) {
     if (err instanceof PublishError) throw err;
     if (err instanceof RetryExhaustedError) {
+      // Preserve the final attempt's message so production triage in CI logs
+      // sees *why* the retries failed (e.g., "buttondown 502: Bad Gateway"),
+      // not just the attempt count. The message is already sanitized.
+      const lastMsg =
+        err.lastError instanceof Error
+          ? err.lastError.message
+          : err.lastError !== undefined
+            ? String(err.lastError)
+            : "unknown error";
       throw new PublishError(
-        `buttondown publish failed after ${err.attempts} attempts`,
-        { attempts: err.attempts, terminal: false },
+        `buttondown publish failed after ${err.attempts} attempts: ${sanitizeForLog(lastMsg, opts.apiKey)}`,
+        { attempts: err.attempts, terminal: false, cause: err.lastError },
       );
     }
+    const detail = err instanceof Error ? err.message : String(err);
     throw new PublishError(
-      `buttondown publish unexpected error: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-      { attempts, terminal: true },
+      `buttondown publish unexpected error: ${sanitizeForLog(detail, opts.apiKey)}`,
+      { attempts, terminal: true, cause: err },
     );
   }
 }

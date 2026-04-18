@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fetchAll as realFetchAll } from "./collectors/index.js";
 import { mockFetchAll } from "./collectors/mock.js";
@@ -11,21 +11,24 @@ import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import { log } from "./log.js";
 import { runBackfill } from "./backfill.js";
 import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
-import {
-  renderIssue,
-  RENDERER_TEMPLATE_URL_PATTERNS,
-  type RenderedIssue,
-} from "./renderer/index.js";
+import { renderIssue, type RenderedIssue } from "./renderer/index.js";
 import {
   publishToButtondown,
   PublishError,
-  type ButtondownPublishResult,
 } from "./publisher/index.js";
 import { deriveRunDate } from "./runDate.js";
 import type { RawItem, RunContext, ScoredItem, SourceSummary } from "./types.js";
 
+// Narrow contract intentionally — alternate publishers (E7) only need to
+// return `id` + `attempts`. Buttondown-specific fields (e.g. endpoint) live in
+// `ButtondownPublishResult` and stay inside the adapter.
+export interface PublishOutcome {
+  readonly id: string;
+  readonly attempts: number;
+}
+
 export interface Publisher {
-  publish(issue: RenderedIssue): Promise<ButtondownPublishResult>;
+  publish(issue: RenderedIssue): Promise<PublishOutcome>;
 }
 
 export interface OrchestratorOptions {
@@ -79,8 +82,27 @@ function parsePositiveInt(
   return n;
 }
 
+function sentinelPath(repoRoot: string, runDate: string): string {
+  return path.join(repoRoot, "issues", runDate, ".published");
+}
+
 function checkSentinel(repoRoot: string, runDate: string): boolean {
-  return existsSync(path.join(repoRoot, "issues", runDate, ".published"));
+  return existsSync(sentinelPath(repoRoot, runDate));
+}
+
+// Write the S-03 sentinel after a successful publish so a manual GHA re-run
+// of the same `runDate` is short-circuited at the top of `runOrchestrator`.
+// E6 (Archivist) will eventually own this alongside the issue .md/.json
+// artifacts; until then, the orchestrator writes the bare sentinel itself
+// so S-03 is actually load-bearing in production.
+function writeSentinel(
+  repoRoot: string,
+  runDate: string,
+  publishId: string,
+): void {
+  const dir = path.join(repoRoot, "issues", runDate);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(sentinelPath(repoRoot, runDate), `${publishId}\n`);
 }
 
 function selectCurator(env: NodeJS.ProcessEnv): Curator {
@@ -148,6 +170,24 @@ export async function runOrchestrator(
   }
   if (dryRun && checkSentinel(repoRoot, runDate)) {
     log.info("[DRY_RUN] sentinel present but bypassed (O-02)", { runDate });
+  }
+
+  // Fail-fast on missing publishing secret AFTER the sentinel check (an
+  // already-published runDate doesn't need a key) so we don't burn Claude
+  // curation budget collecting+scoring for a run that cannot publish. DRY_RUN
+  // and an injected publisher both bypass this check (tests, preview builds).
+  if (!dryRun && opts.publisher === undefined) {
+    const key = env.BUTTONDOWN_API_KEY ?? "";
+    if (!key) {
+      log.error("BUTTONDOWN_API_KEY not set (fail-fast pre-collection)", {
+        runDate,
+      });
+      return {
+        runDate,
+        status: "failed",
+        reason: "missing_api_key",
+      };
+    }
   }
 
   // Collect
@@ -223,24 +263,34 @@ export async function runOrchestrator(
       expected: filteredItems.length,
       actual: scored.length,
     });
-    return { runDate, status: "failed", reason: "E-05" };
+    return {
+      runDate,
+      status: "failed",
+      reason: "E-05",
+      scored,
+      summary: filteredSummary,
+    };
   }
 
-  // Un-01 link-integrity gate. Renderer-owned allowlist exempts template
-  // URLs (newsletter home, archive, unsubscribe) that the Renderer will
-  // inject into the body. Any URL in Claude output that does not trace back
-  // to a raw item (and is not allowlisted) fails the run.
-  const integrity = verifyLinkIntegrity(
-    scored,
-    filteredItems,
-    RENDERER_TEMPLATE_URL_PATTERNS,
-  );
+  // Un-01 link-integrity gate. Pass an empty allowlist: the renderer's
+  // template URLs (newsletter home, archive, unsubscribe) are deterministic
+  // constants emitted only into the rendered body — they do NOT appear in
+  // ScoredItem fields. Including the allowlist here would *widen* the gate
+  // and let a hallucinated `https://buttondown.com/ai-builder-pulse/...` URL
+  // in a Claude description bypass Un-01.
+  const integrity = verifyLinkIntegrity(scored, filteredItems, []);
   if (!integrity.ok) {
     log.error("Un-01 link-integrity violation", {
       violationCount: integrity.violations.length,
       sample: integrity.violations.slice(0, 5),
     });
-    return { runDate, status: "failed", reason: "Un-01" };
+    return {
+      runDate,
+      status: "failed",
+      reason: "Un-01",
+      scored,
+      summary: filteredSummary,
+    };
   }
   log.info("link-integrity ok", {
     checked: integrity.checkedCount,
@@ -297,7 +347,7 @@ export async function runOrchestrator(
   // fake via opts.publisher. BUTTONDOWN_API_KEY is read lazily so DRY_RUN
   // and skip paths do not require the secret.
   const publisher = opts.publisher ?? defaultButtondownPublisher(env);
-  let publishResult: ButtondownPublishResult;
+  let publishResult: PublishOutcome;
   try {
     publishResult = await publisher.publish(rendered);
   } catch (err) {
@@ -324,6 +374,20 @@ export async function runOrchestrator(
     publishId: publishResult.id,
     attempts: publishResult.attempts,
   });
+
+  // S-03 sentinel write — must come AFTER the publish succeeds. A failure
+  // here is non-fatal (the email already went out); we log loudly so a
+  // re-run can be detected by an operator. E6 will fold this into a richer
+  // archivist that also writes issue.md/issue.json.
+  try {
+    writeSentinel(repoRoot, runDate, publishResult.id);
+  } catch (err) {
+    log.warn("S-03 sentinel write failed (publish already succeeded)", {
+      runDate,
+      publishId: publishResult.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   return {
     runDate,
