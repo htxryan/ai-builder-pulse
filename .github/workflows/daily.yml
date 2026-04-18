@@ -82,6 +82,10 @@ jobs:
         if: ${{ steps.commit.outputs.committed == 'true' }}
         run: |
           set -euo pipefail
+          # Rebase onto remote to absorb any commits that landed between
+          # checkout and now (rare on a single-writer cron branch, but cheap
+          # insurance). Autostash preserves the just-made archive commit.
+          git pull --rebase --autostash origin ${GITHUB_REF_NAME}
           if ! git push origin HEAD:${GITHUB_REF_NAME}; then
             echo "::error::Un-06 DIVERGENCE — Buttondown publish succeeded but git push failed. Next run's E-06 backfill will detect missing .published and re-publish."
             exit 1

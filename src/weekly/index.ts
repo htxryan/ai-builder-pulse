@@ -3,7 +3,7 @@
 // the same Buttondown adapter the daily uses, and persists the digest to
 // `weekly/{weekId}.md`. Commit + push is the workflow's job (weekly.yml).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { log } from "../log.js";
 import { publishToButtondown, PublishError } from "../publisher/index.js";
@@ -133,9 +133,12 @@ export async function runWeeklyDigest(
 
   // Persist the digest BEFORE publishing so a publish failure still leaves
   // an inspectable artifact on disk (matches the daily archivist ordering).
+  // Atomic write via tmp+rename — same rationale as the daily archivist.
   mkdirSync(weeklyDir(repoRoot), { recursive: true });
   const dest = digestPath(repoRoot, weekId);
-  writeFileSync(dest, digest.body);
+  const tmp = `${dest}.tmp`;
+  writeFileSync(tmp, digest.body);
+  renameSync(tmp, dest);
 
   if (dryRun) {
     log.info("[DRY_RUN] would publish weekly digest", {

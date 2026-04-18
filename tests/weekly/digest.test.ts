@@ -43,6 +43,25 @@ describe("priorSevenDays", () => {
       "2026-04-18",
     ]);
   });
+
+  it("crosses month boundary", () => {
+    const out = priorSevenDays("2026-05-02");
+    expect(out).toEqual([
+      "2026-04-26",
+      "2026-04-27",
+      "2026-04-28",
+      "2026-04-29",
+      "2026-04-30",
+      "2026-05-01",
+      "2026-05-02",
+    ]);
+  });
+
+  it("crosses year boundary", () => {
+    const out = priorSevenDays("2026-01-03");
+    expect(out[0]).toBe("2025-12-28");
+    expect(out[6]).toBe("2026-01-03");
+  });
 });
 
 describe("buildWeeklyDigest", () => {

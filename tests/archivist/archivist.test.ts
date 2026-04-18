@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -133,6 +133,27 @@ describe("archiveRun", () => {
     archiveRun({ ...args, rendered: { subject: "S", body: "two" }, publishId: "em_2" });
     expect(readFileSync(issueMdPath(root, runDate), "utf8")).toBe("two");
     expect(readFileSync(sentinelPath(root, runDate), "utf8").trim()).toBe("em_2");
+  });
+
+  it("writes .published LAST so a mid-run crash leaves E-06 able to detect orphaned issue.md", () => {
+    const scored = [baseItem()];
+    archiveRun({
+      runDate,
+      repoRoot: root,
+      rendered: { subject: "S", body: "b" },
+      scored,
+      summary: {} as SourceSummary,
+      publishId: "em_x",
+      publishedAt: "2026-04-18T06:10:00.000Z",
+    });
+    // mtime ordering: .published must be >= issue.md and items.json mtime.
+    // (On filesystems with second-granularity we may see equality; strict
+    //  `>` would be flaky. `>=` is what the contract actually requires.)
+    const issueMtime = statSync(issueMdPath(root, runDate)).mtimeMs;
+    const itemsMtime = statSync(itemsJsonPath(root, runDate)).mtimeMs;
+    const sentMtime = statSync(sentinelPath(root, runDate)).mtimeMs;
+    expect(sentMtime).toBeGreaterThanOrEqual(issueMtime);
+    expect(sentMtime).toBeGreaterThanOrEqual(itemsMtime);
   });
 
   it("leaves no .tmp files behind (atomic rename)", () => {

@@ -46,10 +46,7 @@ export function isoWeekId(d: Date): string {
   const jan4 = new Date(Date.UTC(isoYear, 0, 4));
   const week = Math.ceil(
     ((t.getTime() - jan4.getTime()) / 86_400_000 + ((jan4.getUTCDay() || 7) - 1)) / 7,
-  ) + 0;
-  // Pre-2000 sanity: the formula above returns week-of-year starting from the
-  // Monday of the week containing Jan 4. We need +1 because we zero-indexed
-  // the offset from Monday of week 1.
+  );
   return `${isoYear}-W${String(week).padStart(2, "0")}`;
 }
 
