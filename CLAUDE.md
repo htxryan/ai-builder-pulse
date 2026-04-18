@@ -136,27 +136,30 @@ Architecture not yet mapped. Follow existing patterns found in the codebase.
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
 <!-- GSD:skills-end -->
 
-<!-- GSD:workflow-start source:GSD defaults -->
-## GSD Workflow Enforcement
+## Compound-Agent Workflow
 
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+This project uses the **compound-agent** system (`npx ca` / `/compound:*` commands) for planning, execution, and lesson capture. See `.claude/CLAUDE.md` and `AGENTS.md` for the full protocol.
 
-Use these entry points:
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
+### Entry points
 
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
+- `/compound:spec-dev` — develop a precise spec via Socratic dialogue (EARS + Mermaid)
+- `/compound:architect` — decompose a large spec into cook-it-ready epic beads
+- `/compound:plan` — create a structured implementation plan with tasks and dependencies
+- `/compound:work` — execute an implementation plan by delegating to an agent team
+- `/compound:review` — multi-agent code review with severity classification
+- `/compound:research` / `/compound:get-a-phd` — deep research producing a structured deliverable
+- `/compound:check-that` — search lessons and apply them to current work
+- `/compound:prime` — reload workflow context after compaction or session start
 
+### Lesson management (MANDATORY)
 
+- `npx ca search "query"` — call **before** architectural decisions or repeating a past pattern
+- `npx ca learn "insight"` — call **after** corrections, self-corrections, or non-obvious discoveries
+- Never edit `.claude/lessons/` files directly — use the CLI
 
-<!-- GSD:profile-start -->
-## Developer Profile
+### Quality gate for captured lessons
 
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
+Novel (not already stored) + specific (clear guidance) + actionable (preferred). Workflow: search BEFORE deciding, capture AFTER learning.
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
