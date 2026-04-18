@@ -120,6 +120,10 @@ function validateApiKey(apiKey: string): void {
   }
 }
 
+/**
+ * POST a rendered issue to Buttondown with exponential retry on 5xx. 4xx
+ * fails fast as a terminal `PublishError`. The API key is never logged.
+ */
 export async function publishToButtondown(
   issue: RenderedIssue,
   opts: ButtondownPublishOptions,

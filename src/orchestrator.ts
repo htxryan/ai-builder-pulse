@@ -26,18 +26,22 @@ import {
 import { deriveRunDate } from "./runDate.js";
 import type { RawItem, RunContext, ScoredItem, SourceSummary } from "./types.js";
 
-// Narrow contract intentionally — alternate publishers (E7) only need to
-// return `id` + `attempts`. Buttondown-specific fields (e.g. endpoint) live in
-// `ButtondownPublishResult` and stay inside the adapter.
+/**
+ * Minimum info the orchestrator needs back from a publisher. Alternate
+ * publishers (E7) implement only this; Buttondown-specific fields live in
+ * `ButtondownPublishResult` inside the adapter.
+ */
 export interface PublishOutcome {
   readonly id: string;
   readonly attempts: number;
 }
 
+/** Narrow publish contract: take a rendered issue, return an id + attempts. */
 export interface Publisher {
   publish(issue: RenderedIssue): Promise<PublishOutcome>;
 }
 
+/** Optional injection points for tests (collectors, curator, publisher). */
 export interface OrchestratorOptions {
   now?: Date;
   repoRoot?: string;
@@ -50,6 +54,7 @@ export interface OrchestratorOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+/** Terminal status of a daily orchestrator run — drives CI exit code + job summary. */
 export type OrchestratorStatus =
   | "published"
   | "published_archive_failed"
@@ -60,9 +65,11 @@ export type OrchestratorStatus =
   | "source_floor_skip"
   | "failed";
 
-// Per-stage wall time in milliseconds. Keys are populated as each stage
-// completes (successfully or not) so a skip/fail run carries partial data
-// through to the job-summary renderer.
+/**
+ * Per-stage wall time in milliseconds. Keys are populated as each stage
+ * completes (successfully or not) so a skip/fail run carries partial data
+ * through to the job-summary renderer.
+ */
 export interface StageTimings {
   collect?: number;
   preFilter?: number;
@@ -74,6 +81,7 @@ export interface StageTimings {
   totalMs?: number;
 }
 
+/** Finalized daily run result passed to the summary renderer and index.ts. */
 export interface OrchestratorResult {
   runDate: string;
   // Stable correlation id shared by every log line emitted during this run.
@@ -166,6 +174,12 @@ function selectCurator(env: NodeJS.ProcessEnv): Curator {
   return new MockCurator();
 }
 
+/**
+ * Top-level daily pipeline entry. Collects, pre-filters, curates, renders,
+ * publishes, and archives one runDate. Honors `DRY_RUN`, the S-03 sentinel,
+ * S-02/S-05 skip gates, ARCHIVES_FALLBACK, and a global `ORCHESTRATOR_TIMEOUT_MS`.
+ * Always resolves — errors surface via `result.status === "failed"`.
+ */
 export async function runOrchestrator(
   opts: OrchestratorOptions = {},
 ): Promise<OrchestratorResult> {

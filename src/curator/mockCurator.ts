@@ -1,11 +1,17 @@
-import type { Category, RawItem, ScoredItem } from "../types.js";
+import type { Category, RawItem, ScoredItem, Source } from "../types.js";
 import { CATEGORIES, ScoredItemSchema } from "../types.js";
 import type { SkippedItemRecord } from "./deadletter.js";
 
-// Optional cost/token metrics emitted by curators that talk to a paid API.
-// MockCurator leaves this undefined; ClaudeCurator populates after each
-// successful `curate` call so the orchestrator can surface the run's cost in
-// the operator job summary.
+/**
+ * Optional cost/token metrics emitted by curators that talk to a paid API.
+ * MockCurator leaves this undefined; ClaudeCurator populates after each
+ * successful `curate` call so the orchestrator can surface the run's cost in
+ * the operator job summary.
+ *
+ * `tokensPerSource` / `costPerSource` are item-count-weighted apportionments
+ * of the per-chunk usage — they let an operator see which source is driving
+ * curation cost (e.g. "RSS is 70% of today's spend").
+ */
 export interface CuratorMetrics {
   readonly inputTokens: number;
   readonly outputTokens: number;
@@ -14,6 +20,14 @@ export interface CuratorMetrics {
   // accounting. Undefined when the client did not return usage data.
   readonly cacheReadInputTokens?: number;
   readonly cacheCreationInputTokens?: number;
+  // Per-source apportionment. Keys are the Source enum values; absent sources
+  // contributed zero items to curation. Token counts are `input + output`;
+  // cost is `inputTokens/1M × inputCostPerMTok + outputTokens/1M × outputCostPerMTok`.
+  // Apportioned by item count per chunk (not byte size), so a source with
+  // long descriptions may be slightly under-attributed — good enough for
+  // "who is driving cost" triage.
+  readonly tokensPerSource?: Partial<Record<Source, number>>;
+  readonly costPerSource?: Partial<Record<Source, number>>;
 }
 
 export interface Curator {

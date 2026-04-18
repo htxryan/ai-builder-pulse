@@ -54,6 +54,11 @@ function computeDelay(attempt: number, opts: RetryOptions): number {
   return Math.min(raw, opts.maxDelayMs);
 }
 
+/**
+ * Run `fn` up to `opts.maxAttempts` times with exponential backoff. A thrown
+ * `RetryableError` triggers a retry; any other error is terminal and rethrown
+ * immediately. On exhaustion a `RetryExhaustedError` is thrown.
+ */
 export async function retry<T>(
   fn: (attempt: number) => Promise<T>,
   opts: RetryOptions = DEFAULT_RETRY_OPTIONS,

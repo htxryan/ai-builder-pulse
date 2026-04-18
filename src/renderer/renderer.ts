@@ -165,6 +165,11 @@ function pickTopItem(kept: readonly ScoredItem[]): ScoredItem | null {
   return candidate.relevanceScore >= TOP_PICK_THRESHOLD ? candidate : null;
 }
 
+/**
+ * C5 renderer. Build the Buttondown-ready `{subject, body}` from kept
+ * ScoredItems. Pure, deterministic: same input → same output, no I/O.
+ * Honors U-05 ordering (category → relevance DESC → id ASC).
+ */
 export function renderIssue(
   runDate: string,
   kept: readonly ScoredItem[],

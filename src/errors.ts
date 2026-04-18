@@ -23,8 +23,11 @@ export interface StageErrorOptions {
   readonly cause?: unknown;
 }
 
-// Base class. Subclasses set `name` to their concrete class name so
-// `err.name` remains useful for log tags / test assertions.
+/**
+ * Base class for every stage-scoped pipeline error. Subclasses set `name` to
+ * their concrete class name so `err.name` remains useful for log tags and
+ * test assertions.
+ */
 export class OrchestratorStageError extends Error {
   readonly stage: Stage;
   readonly retryable: boolean;
@@ -36,10 +39,11 @@ export class OrchestratorStageError extends Error {
   }
 }
 
-// Thrown when an archive JSON file (items.json) is unreadable: either the
-// file's JSON is syntactically invalid (JSON.parse throws) or the parsed
-// shape fails zod validation. Carries `filePath` so operators can locate the
-// offending archive without grepping the trace.
+/**
+ * Thrown when an archive JSON file (items.json) is unreadable — either
+ * syntactically invalid JSON or a zod shape mismatch. Carries `filePath`
+ * so operators can locate the offending archive without grepping the trace.
+ */
 export class ArchiveParseError extends OrchestratorStageError {
   readonly filePath: string;
   constructor(
@@ -69,6 +73,11 @@ export type RedirectErrorClass =
   | "abort"
   | "other";
 
+/**
+ * Coarse-classify an HTTP/redirect error into a `RedirectErrorClass` label.
+ * Used for partial-failure summaries so operators can grep one run's output
+ * by class (e.g. `errClass=http_5xx`).
+ */
 export function classifyRedirectError(err: unknown): RedirectErrorClass {
   if (err instanceof Error) {
     const name = err.name.toLowerCase();

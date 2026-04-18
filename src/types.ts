@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+/** Newsletter categories. Claude must emit one per kept item. */
 export const CATEGORIES = [
   "Tools & Launches",
   "Model Releases",
@@ -10,9 +11,11 @@ export const CATEGORIES = [
   "News in Brief",
 ] as const;
 
+/** Zod enum over `CATEGORIES`. */
 export const CategorySchema = z.enum(CATEGORIES);
 export type Category = z.infer<typeof CategorySchema>;
 
+/** Enum of collector sources. `mock` is dev-only; `twitter` is a v1 stub. */
 export const SourceSchema = z.enum([
   "hn",
   "github-trending",
@@ -23,6 +26,7 @@ export const SourceSchema = z.enum([
 ]);
 export type Source = z.infer<typeof SourceSchema>;
 
+/** Per-source metadata union discriminated by `source`. */
 export const RawItemMetadataSchema = z.discriminatedUnion("source", [
   z.object({
     source: z.literal("hn"),
@@ -60,6 +64,7 @@ export const RawItemMetadataSchema = z.discriminatedUnion("source", [
 ]);
 export type RawItemMetadata = z.infer<typeof RawItemMetadataSchema>;
 
+/** A single pre-curation item emitted by a collector. */
 export const RawItemSchema = z.object({
   id: z.string().min(1),
   source: SourceSchema,
@@ -72,6 +77,7 @@ export const RawItemSchema = z.object({
 });
 export type RawItem = z.infer<typeof RawItemSchema>;
 
+/** A `RawItem` plus Claude's category + relevance + keep + description. */
 export const ScoredItemSchema = RawItemSchema.extend({
   category: CategorySchema,
   relevanceScore: z.number().min(0).max(1),
@@ -80,6 +86,7 @@ export const ScoredItemSchema = RawItemSchema.extend({
 });
 export type ScoredItem = z.infer<typeof ScoredItemSchema>;
 
+/** Sub-scope failure captured without aborting the collector (e.g. one 403 subreddit out of N). */
 export const PartialFailureSchema = z.object({
   scope: z.string(),
   error: z.string(),
@@ -87,6 +94,7 @@ export const PartialFailureSchema = z.object({
 });
 export type PartialFailureRecord = z.infer<typeof PartialFailureSchema>;
 
+/** Per-source outcome map surfaced in the GHA job summary. */
 export const SourceSummarySchema = z.record(
   SourceSchema,
   z.object({
@@ -111,6 +119,7 @@ export const SourceSummarySchema = z.record(
 );
 export type SourceSummary = z.infer<typeof SourceSummarySchema>;
 
+/** Immutable per-run parameters threaded through collectors and the pipeline. */
 export interface RunContext {
   readonly runDate: string;
   readonly dryRun: boolean;

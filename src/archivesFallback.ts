@@ -41,6 +41,10 @@ export interface ArchivesFallbackResult {
 // Latest prior day's archive dir that has a readable items.json. We scan the
 // full `issues/` directory rather than taking `runDate - 1` so a weekend or
 // holiday gap does not defeat the fallback.
+/**
+ * Return the most recent prior `runDate` under `issues/` whose `items.json`
+ * exists, or `undefined` if none does.
+ */
 export function findLatestArchive(
   repoRoot: string,
   currentRunDate: string,
@@ -86,6 +90,11 @@ export interface RunArchivesFallbackOpts {
   readonly publisher?: Publisher;
 }
 
+/**
+ * AC7 fallback path. When the daily pipeline would otherwise skip, re-publish
+ * the most recent prior archive with a "From the archives" banner and write
+ * the S-03 sentinel so a same-day rerun still short-circuits.
+ */
 export async function runArchivesFallback(
   repoRoot: string,
   runDate: string,

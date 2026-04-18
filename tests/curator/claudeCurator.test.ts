@@ -381,4 +381,47 @@ describe("ClaudeCurator", () => {
     const items = [raw("a"), raw("b"), raw("a"), raw("c")];
     await expect(cur.curate(items)).rejects.toThrow(/merge conflict/);
   });
+
+  it("per-source metrics: apportions cost by item-count share across mixed-source chunks", async () => {
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 1_000,
+          outputTokens: 400,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({ client, chunkThreshold: 10 });
+    // One chunk: 3 hn + 1 rss. Tokens should split 75% / 25%.
+    const mix: RawItem[] = [
+      raw("h1"),
+      raw("h2"),
+      raw("h3"),
+      {
+        id: "r1",
+        source: "rss",
+        title: "rss",
+        url: "https://feeds.example.com/1",
+        score: 0,
+        publishedAt: "2026-04-18T05:00:00.000Z",
+        metadata: { source: "rss", feedUrl: "https://feeds.example.com/1" },
+      },
+    ];
+    await cur.curate(mix);
+    const m = cur.lastMetrics();
+    expect(m).toBeDefined();
+    expect(m!.tokensPerSource).toBeDefined();
+    expect(m!.costPerSource).toBeDefined();
+    const hnTokens = m!.tokensPerSource!.hn ?? 0;
+    const rssTokens = m!.tokensPerSource!.rss ?? 0;
+    // (1000+400)*0.75=1050 hn, *0.25=350 rss (rounded).
+    expect(hnTokens).toBe(1050);
+    expect(rssTokens).toBe(350);
+    const hnCost = m!.costPerSource!.hn ?? 0;
+    const rssCost = m!.costPerSource!.rss ?? 0;
+    expect(hnCost).toBeGreaterThan(rssCost);
+    // Sum of per-source cost should be close to total (within 0.0001).
+    expect(Math.abs(hnCost + rssCost - m!.estimatedUsd)).toBeLessThan(0.0001);
+  });
 });

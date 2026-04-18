@@ -34,9 +34,11 @@ export interface PreFilterResult {
   readonly summary: SourceSummary;
 }
 
-// E3 entry point. Stateless, deterministic. Idempotent: applying the result
-// items back through `applyPreFilter` with the same runDate produces the same
-// items and an updated stats object with all `*Dropped` counts at zero.
+/**
+ * E3 entry point. Filter RawItems by freshness (24h window), URL shape, and
+ * normalized-URL dedup. Stateless, deterministic, idempotent: re-applying to
+ * the result yields the same items with all `*Dropped` counts at zero.
+ */
 export function applyPreFilter(
   items: readonly RawItem[],
   runDate: string,
@@ -110,6 +112,7 @@ export function applyPreFilter(
   return { items: kept, stats, summary };
 }
 
+/** Set of distinct sources represented in `items`. Used by the S-05 floor check. */
 export function uniqueSources(items: readonly RawItem[]): Set<Source> {
   const out = new Set<Source>();
   for (const it of items) out.add(it.source);

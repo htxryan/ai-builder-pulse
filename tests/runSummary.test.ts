@@ -84,6 +84,26 @@ describe("renderOrchestratorSummary", () => {
     expect(md).toContain("**total**");
   });
 
+  it("renders per-source curator cost table when costPerSource is present", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "published",
+        summary: sampleSummary(),
+        publishId: "em_xyz",
+        curatorMetrics: {
+          inputTokens: 10_000,
+          outputTokens: 2_000,
+          estimatedUsd: 0.0600,
+          tokensPerSource: { hn: 9000, rss: 3000 },
+          costPerSource: { hn: 0.045, rss: 0.015 },
+        },
+      }),
+    );
+    expect(md).toContain("Curator cost by source");
+    expect(md).toMatch(/\| hn \|\s*9000\s*\|\s*\$0\.0450\s*\|\s*75\.0%\s*\|/);
+    expect(md).toMatch(/\| rss \|\s*3000\s*\|\s*\$0\.0150\s*\|\s*25\.0%\s*\|/);
+  });
+
   it("renders an idempotent_skip run with no sources", () => {
     const md = renderOrchestratorSummary(
       baseResult({

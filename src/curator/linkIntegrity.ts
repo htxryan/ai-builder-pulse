@@ -90,8 +90,13 @@ function matchesAllowlist(
   return allowlist.some((pat) => pat.test(url));
 }
 
-// Pure, synchronous, deterministic. Callers pass an allowlist of RegExp
-// patterns that the Renderer controls — leave empty for raw E4 gate usage.
+/**
+ * Un-01 link-integrity check. Every URL a ScoredItem exposes (own `url` plus
+ * any URL embedded in `description`) must trace back to a RawItem. Pure,
+ * synchronous, deterministic. Allowlist patterns exempt renderer-owned
+ * template URLs (newsletter home, unsubscribe). `opts.preFilterRaw` lets
+ * callers classify violations as `dropped_by_pre_filter` for better triage.
+ */
 export function verifyLinkIntegrity(
   scored: readonly ScoredItem[],
   raw: readonly RawItem[],

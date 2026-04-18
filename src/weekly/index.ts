@@ -72,6 +72,7 @@ function digestPath(repoRoot: string, weekId: string): string {
   return path.join(weeklyDir(repoRoot), `${weekId}.md`);
 }
 
+/** Path to the weekly `.published` sentinel (mirrors daily S-03). */
 export function weeklySentinelPath(repoRoot: string, weekId: string): string {
   return path.join(weeklyDir(repoRoot), `${weekId}.published`);
 }
@@ -125,6 +126,12 @@ function defaultPublisher(env: NodeJS.ProcessEnv): Publisher {
   };
 }
 
+/**
+ * E-02 weekly rollup. Loads up to 7 prior days' `items.json`, builds a
+ * best-of digest, publishes via Buttondown, persists the digest under
+ * `weekly/{weekId}.md`, and writes the `{weekId}.published` sentinel.
+ * Always resolves — failures surface via `result.status`.
+ */
 export async function runWeeklyDigest(
   opts: WeeklyOptions = {},
 ): Promise<WeeklyResult> {

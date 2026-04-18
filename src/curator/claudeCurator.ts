@@ -8,7 +8,7 @@ import { OrchestratorStageError } from "../errors.js";
 import { log } from "../log.js";
 import type { Curator, CuratorMetrics } from "./mockCurator.js";
 import { SYSTEM_PROMPT, PROMPT_VERSION } from "./prompt.js";
-import type { RawItem, ScoredItem } from "../types.js";
+import type { RawItem, ScoredItem, Source } from "../types.js";
 import { CategorySchema, ScoredItemSchema } from "../types.js";
 import type { SkippedItemRecord } from "./deadletter.js";
 
@@ -178,7 +178,16 @@ export class ClaudeCurator implements Curator {
     let totalCacheCreation = 0;
     let sawCacheTelemetry = false;
     const recordsById = new Map<string, CurationRecord>();
-    for (const r of results) {
+    // Per-source apportionment. For each chunk we weight input/output tokens
+    // by the share of the chunk's items that came from each source. The
+    // approximation loses fidelity when items have very different body sizes
+    // but is accurate enough for "which source is driving cost" triage.
+    const tokensPerSource: Partial<Record<Source, number>> = {};
+    const inputTokensPerSource: Partial<Record<Source, number>> = {};
+    const outputTokensPerSource: Partial<Record<Source, number>> = {};
+    for (let i = 0; i < results.length; i += 1) {
+      const r = results[i]!;
+      const chunk = chunks[i]!;
       totalInput += r.inputTokens;
       totalOutput += r.outputTokens;
       if (r.cacheReadInputTokens !== undefined) {
@@ -189,6 +198,27 @@ export class ClaudeCurator implements Curator {
         sawCacheTelemetry = true;
         totalCacheCreation += r.cacheCreationInputTokens;
       }
+      // Source composition of this chunk.
+      const srcCounts: Partial<Record<Source, number>> = {};
+      for (const item of chunk) {
+        srcCounts[item.source] = (srcCounts[item.source] ?? 0) + 1;
+      }
+      const chunkSize = chunk.length;
+      if (chunkSize > 0) {
+        for (const [src, count] of Object.entries(srcCounts) as [
+          Source,
+          number,
+        ][]) {
+          const share = count / chunkSize;
+          const inShare = r.inputTokens * share;
+          const outShare = r.outputTokens * share;
+          inputTokensPerSource[src] = (inputTokensPerSource[src] ?? 0) + inShare;
+          outputTokensPerSource[src] =
+            (outputTokensPerSource[src] ?? 0) + outShare;
+          tokensPerSource[src] =
+            (tokensPerSource[src] ?? 0) + inShare + outShare;
+        }
+      }
       for (const rec of r.records) {
         if (recordsById.has(rec.id)) {
           throw new Error(
@@ -197,6 +227,15 @@ export class ClaudeCurator implements Curator {
         }
         recordsById.set(rec.id, rec);
       }
+    }
+    const costPerSource: Partial<Record<Source, number>> = {};
+    for (const src of Object.keys(tokensPerSource) as Source[]) {
+      const inTok = inputTokensPerSource[src] ?? 0;
+      const outTok = outputTokensPerSource[src] ?? 0;
+      costPerSource[src] = this.estimateUsd(inTok, outTok);
+      // Round total tokens to an integer — the apportioned float has no
+      // business precision beyond whole tokens.
+      tokensPerSource[src] = Math.round(tokensPerSource[src] ?? 0);
     }
 
     // Total cost check — catches the case where individual chunks all slip
@@ -257,6 +296,9 @@ export class ClaudeCurator implements Curator {
             cacheReadInputTokens: totalCacheRead,
             cacheCreationInputTokens: totalCacheCreation,
           }
+        : {}),
+      ...(Object.keys(tokensPerSource).length > 0
+        ? { tokensPerSource, costPerSource }
         : {}),
     };
     log.info("curator done", {

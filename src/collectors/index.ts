@@ -31,6 +31,7 @@ export interface FetchAllOptions {
   readonly abortSignal?: AbortSignal;
 }
 
+/** Default collector set: HN, GitHub Trending, Reddit, RSS, Twitter (stub). */
 export function defaultCollectors(): Collector[] {
   return [
     new HnCollector(),
@@ -55,6 +56,12 @@ function reasonForReddit(env: NodeJS.ProcessEnv): string | undefined {
   return undefined;
 }
 
+/**
+ * Run every collector concurrently with per-source timeout, classify any
+ * failure into `ok` / `partial` / `timeout` / `error` / `skipped`, and
+ * return merged items plus the per-source `SourceSummary` used by the
+ * pre-filter and GHA job summary.
+ */
 export async function fetchAll(
   ctx: RunContext,
   opts: FetchAllOptions = {},

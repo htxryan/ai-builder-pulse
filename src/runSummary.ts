@@ -9,8 +9,9 @@
 import { appendFileSync } from "node:fs";
 import type { OrchestratorResult, StageTimings } from "./orchestrator.js";
 import type { WeeklyResult, WeeklyStageTimings } from "./weekly/index.js";
-import type { SourceSummary } from "./types.js";
+import type { Source, SourceSummary } from "./types.js";
 import type { BackfillResult } from "./backfill.js";
+import type { CuratorMetrics } from "./curator/mockCurator.js";
 
 const STAGE_ORDER: readonly (keyof StageTimings)[] = [
   "collect",
@@ -91,6 +92,23 @@ function renderSourceRows(summary: SourceSummary | undefined): string {
   return out;
 }
 
+function renderPerSourceCostRows(m: CuratorMetrics): string {
+  const costs = m.costPerSource ?? {};
+  const tokens = m.tokensPerSource ?? {};
+  const totalCost = m.estimatedUsd > 0 ? m.estimatedUsd : 0;
+  const rows: string[] = [];
+  rows.push("| Source | Tokens | Cost | % of run |");
+  rows.push("|---|--:|--:|--:|");
+  const sources = Object.keys(costs).sort() as Source[];
+  for (const src of sources) {
+    const c = costs[src] ?? 0;
+    const t = tokens[src] ?? 0;
+    const pct = totalCost > 0 ? ((c / totalCost) * 100).toFixed(1) + "%" : "—";
+    rows.push(`| ${src} | ${t} | ${fmtUsd(c)} | ${pct} |`);
+  }
+  return rows.join("\n") + "\n";
+}
+
 function renderBackfillRows(bf: BackfillResult | undefined): string {
   if (!bf || bf.attempted === 0) {
     return "_(no prior-day orphans detected)_\n";
@@ -122,6 +140,7 @@ function renderTimingRows(
   return rows.join("\n") + "\n";
 }
 
+/** Render a daily OrchestratorResult as the markdown block posted to `$GITHUB_STEP_SUMMARY`. */
 export function renderOrchestratorSummary(r: OrchestratorResult): string {
   const lines: string[] = [];
   lines.push(
@@ -136,6 +155,12 @@ export function renderOrchestratorSummary(r: OrchestratorResult): string {
     lines.push(
       `- **curator cost**: ${fmtUsd(m.estimatedUsd)} (in ${m.inputTokens} / out ${m.outputTokens} tokens)`,
     );
+  }
+  if (r.curatorMetrics?.costPerSource) {
+    lines.push("");
+    lines.push("### Curator cost by source");
+    lines.push("");
+    lines.push(renderPerSourceCostRows(r.curatorMetrics));
   }
   if (r.rendered) {
     lines.push(
@@ -166,6 +191,7 @@ export function renderOrchestratorSummary(r: OrchestratorResult): string {
   return lines.join("\n");
 }
 
+/** Render a weekly digest result as the markdown block for `$GITHUB_STEP_SUMMARY`. */
 export function renderWeeklySummary(r: WeeklyResult): string {
   const lines: string[] = [];
   lines.push(
@@ -190,10 +216,11 @@ export function renderWeeklySummary(r: WeeklyResult): string {
   return lines.join("\n");
 }
 
-// Un-06 remote-idempotency short-circuit summary. Emitted when the workflow's
-// pre-flight detects the remote sentinel and sets SKIP_RUN=1, so an operator
-// browsing the Actions tab sees an explicit "why nothing ran" tile instead of
-// an empty summary.
+/**
+ * Un-06 remote-idempotency short-circuit summary. Emitted when the workflow
+ * pre-flight detects the remote sentinel and sets `SKIP_RUN=1`. Operators
+ * browsing the Actions tab see an explicit "why nothing ran" tile.
+ */
 export function renderRemoteSkipSummary(mode: string, reason: string): string {
   const label = mode === "weekly" ? "Weekly digest" : "Daily run";
   return [
@@ -205,8 +232,10 @@ export function renderRemoteSkipSummary(mode: string, reason: string): string {
   ].join("\n");
 }
 
-// Append markdown to $GITHUB_STEP_SUMMARY if the env var is set. No-op locally.
-// Returns true if the write happened — useful for tests and log annotation.
+/**
+ * Append `markdown` to the file at `$GITHUB_STEP_SUMMARY`. No-op locally when
+ * the env var is unset. Returns true iff a write happened.
+ */
 export function appendGithubStepSummary(
   markdown: string,
   env: NodeJS.ProcessEnv = process.env,

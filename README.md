@@ -2,6 +2,25 @@
 
 Newsletter for AI builders — fully automated daily digest ingesting HN, GitHub Trending, Reddit, and AI-blog RSS feeds; curated by Claude; published via Buttondown.
 
+## Quick Start
+
+From a clean clone, this sequence should put you at a working dry-run in
+under 10 minutes:
+
+```bash
+corepack enable
+pnpm install
+cp .env.example .env          # fill in ANTHROPIC_API_KEY / BUTTONDOWN_API_KEY only if you want real calls
+pnpm lint                     # tsc --noEmit — must pass
+pnpm test                     # vitest — must pass (400+ tests)
+DRY_RUN=1 USE_MOCK_COLLECTORS=1 MIN_ITEMS_TO_PUBLISH=1 pnpm start   # end-to-end pipeline with no network, no publish
+```
+
+If the last step prints an `orchestrator done` log line with `status=dry_run`,
+the install is healthy. (Without `MIN_ITEMS_TO_PUBLISH=1` the mock collectors
+don't produce enough kept items to clear the default S-02 floor of 5, and the
+run reports `empty_skip` — also a successful signal, just less satisfying.)
+
 ## Development
 
 ```bash
@@ -13,6 +32,11 @@ DRY_RUN=1 pnpm start  # run orchestrator without publishing
 ```
 
 ## Environment Variables
+
+See [`.env.example`](.env.example) for the full, authoritative list with
+comments and placeholder values. The summary below covers the variables an
+operator is most likely to set by hand; secondary flags are documented only
+in `.env.example`.
 
 | Name | Purpose |
 |------|---------|

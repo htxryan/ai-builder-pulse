@@ -20,102 +20,88 @@ A fully automated daily newsletter for software engineers building AI-powered to
 <!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
-## Recommended Stack
+This project is **TypeScript on Node.js**, executed directly via `tsx` without
+a separate compile step for local runs. The CI entry point is
+`node --import tsx src/index.ts` via `pnpm start`. A `pnpm build` compiles to
+`dist/` with `tsc -p tsconfig.build.json` for distribution artifacts.
+
 ### Core Technologies
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Python | 3.12 | Runtime | GitHub Actions ships Python 3.12/3.13 by default; stable, well-cached. 3.14 exists but adds no value for this use case and has fewer tested Action images. |
-| anthropic SDK | 0.94.1 | Claude API client | Official SDK, fully typed, native async, structured outputs via `output_config.format` (now GA — no beta header needed). Required for content filtering and curation. |
-| httpx | 0.28.1 | HTTP client | Requests-compatible API + native async support in one library. Replaces `requests` for this project because several data sources benefit from concurrent fetch. Keep one HTTP client. |
-| feedparser | 6.0.12 | RSS/Atom feed parsing | Battle-tested, handles malformed feeds, auto-normalizes across RSS and Atom variants. Simon Willison's feed, AI blogs, and Arxiv all need this. |
-| praw | 7.8.1 | Reddit API | Official Python Reddit API Wrapper. Handles OAuth, rate limiting automatically. Use for r/LocalLLaMA, r/MachineLearning, r/mlops. |
-| PyGithub | 2.9.0 | GitHub REST API | Typed GitHub API client. Used for fetching repo metadata (stars, language, description) once trending repo names are scraped. NOT for the trending list itself — see below. |
-| Jinja2 | 3.1.6 | Template rendering | Standard Python templating. Used to render markdown and HTML email body from structured data. Widely used, no surprises, works headlessly. |
-| Markdown | 3.10.2 | Markdown to HTML | Converts issue body markdown to HTML if Buttondown plain-text mode needs it. Latest stable as of Feb 2026. |
-| uv | latest (pinned in CI) | Dependency management + venv | Fastest Python package installer/resolver, native GitHub Actions integration via `astral-sh/setup-uv`. Replaces pip+venv for CI. Lock file support eliminates environment drift. |
-### Supporting Libraries
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| pydantic | 2.x (latest) | Data validation and schema | Defining `NewsItem`, `DailyIssue` schemas. Pairs directly with Claude structured outputs — use the same Pydantic model client-side to parse Claude JSON responses. |
-| python-dateutil | 2.9.x | Date parsing | Parsing inconsistent datetime strings from RSS feeds and APIs into UTC datetime objects for freshness filtering. |
-| beautifulsoup4 | 4.x (latest) | HTML scraping | Required only for GitHub Trending (no official API). Parses `https://github.com/trending` HTML. Keep scope narrow — only one scraping target uses this. |
-| lxml | 5.x (latest) | Fast XML/HTML parser | Parser backend for BeautifulSoup. Faster than html.parser; needed for reliability on GitHub's HTML. |
-| python-dotenv | 1.x (latest) | Local .env loading | Loads API keys from `.env` during local development. GitHub Actions uses repo Secrets — dotenv is dev-only, not needed in CI. |
-| tenacity | 9.x (latest) | Retry logic | Decorator-based retries with exponential backoff for HTTP calls and API requests. Critical for CI reliability — a transient 429 or 503 must not fail the entire daily run. |
+| Technology | Version | Purpose |
+|---|---|---|
+| Node.js | `>= 20.11` (engines pin) | Runtime. GHA `setup-node@v4` with `node-version: 20`. Native `fetch`, `AbortController`, `structuredClone` all available — no polyfills needed. |
+| pnpm | `9.12.0` (packageManager pin) | Package manager. `corepack enable` in CI picks up the pinned version from `package.json`. |
+| TypeScript | `^5.5` | Strict-typed source. `tsconfig.json` has `"strict": true`; unchecked casts are enforced away by `scripts/check-unchecked-casts.mjs` (`pnpm check:casts`). |
+| tsx | `^4.19` | Direct TS execution. `pnpm start` / `pnpm test` run `.ts` files without a prior build step. |
+| vitest | `^2.1` | Test runner. 400+ unit/integration tests live under `tests/`. Coverage via `@vitest/coverage-v8`. |
+| zod | `^3.25` | Runtime schemas. Every boundary (`RawItem`, `ScoredItem`, curator response, archive `items.json`, GH API) is parsed through zod so invalid payloads fail loudly instead of silently drifting through the pipeline. |
+| @anthropic-ai/sdk | `^0.90` | Claude API client. Structured outputs via `messages.parse` with a zod schema. Used in `src/curator/anthropicClient.ts`. |
+| fast-xml-parser | `^5.7` | RSS/Atom feed parsing. Chosen over `rss-parser` because it handles malformed feeds better and keeps namespace-prefixed fields (`media:content` etc.) addressable. |
+| node-html-parser | `^7.1` | GitHub Trending HTML scrape. Small, fast, DOM-like API. Scope is limited to one page — heavier libraries (cheerio, jsdom) are not justified. |
+
+### Supporting Infrastructure (standard library)
+| Capability | How |
+|---|---|
+| HTTP | Native `fetch` + `AbortSignal.timeout` (Node 20+). No `axios`/`node-fetch`/`undici` dep — see "What NOT to Use". |
+| Concurrency | Hand-rolled `mapWithConcurrency` in `src/collectors/concurrency.ts`. Small enough that pulling in `p-limit` would add more risk than value. |
+| Retries | Per-callsite in `src/publisher/retry.ts` (exponential backoff). Not a generic decorator — keeps retry policy visible at the callsite. |
+| File I/O | `node:fs` with an atomic-write helper (`src/fsAtomic.ts`) that writes to a sibling `.tmp` then renames. Same-filesystem rename is atomic on POSIX. |
+| Correlation IDs | `randomBytes` from `node:crypto` (see `src/log.ts` → `makeRunId`). Every log line emitted during a run carries `runId=<id>`. |
+| Templating | Plain template literals + string concatenation in `src/renderer/renderer.ts`. The issue body is small and structured; a template engine would be overkill. |
+
 ### Development Tools
 | Tool | Purpose | Notes |
-|------|---------|-------|
-| `astral-sh/setup-uv` | GitHub Actions uv setup | Pin to `v7`. Set `enable-cache: true` with `uv.lock` as cache key. Cuts cold-start install time from ~60s to ~5s. |
-| `actions/checkout` | Repo checkout in CI | Use `v4`. Required for reading prior daily issue files (weekly digest) and committing new ones. Set `token: ${{ secrets.GITHUB_TOKEN }}` for push-back. |
-| stefanzweifel/git-auto-commit-action | Commit output files to repo | Pin to `v5`. Handles `git add`, `git commit`, `git push` in one Action step. Used to persist daily issue `.md` and `.json` files. |
-| pytest | 8.x | Test runner | Unit tests for pipeline stages: filtering logic, link verification, template rendering. |
-| pytest-asyncio | 0.x (latest) | Async test support | Required for testing async fetch functions. |
-## Installation
-# Core runtime dependencies
-# Dev dependencies
+|---|---|---|
+| `actions/checkout@v4` | Repo checkout in CI | Needed by daily/weekly workflows to read prior issue archives and commit new ones. |
+| `pnpm/action-setup@v4` | Install pnpm in CI | Respects the `packageManager` field in `package.json`. |
+| `actions/setup-node@v4` | Node 20 in CI | Pair with pnpm cache via `cache: pnpm`. |
+| `vitest` + `@vitest/coverage-v8` | Test + coverage | `pnpm test` for the full suite; `pnpm test:watch` locally. |
+| `tsc --noEmit` | Type check | `pnpm lint` / `pnpm typecheck` — same thing, wired to CI. |
+| `scripts/check-unchecked-casts.mjs` | Cast hygiene | Runs via `pnpm check:casts`. Fails if unreviewed `as` casts appear outside documented exceptions. |
+
+### Installation
+```bash
+corepack enable
+pnpm install
+```
+No build step is required for local runs (`tsx` executes TS directly).
+
 ## Alternatives Considered
 | Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| httpx | requests | Never — httpx is a superset with async. No reason to use requests if httpx is already in the stack. |
-| httpx | aiohttp | If the entire pipeline were async-first from the ground up. httpx covers both sync and async, so aiohttp adds no benefit here. |
-| uv | pip + venv | Never in CI. pip is slower and lacks a lock file by default. Only use pip if uv is unavailable in a constrained environment. |
-| feedparser | custom RSS parsing with httpx+lxml | Only if you need streaming or feed discovery logic feedparser doesn't support. feedparser handles 99% of public feeds without configuration. |
-| praw | direct Reddit API via httpx | If Reddit revokes third-party app access again (happened in 2023). praw is official and maintained by Reddit staff alumni — prefer it while it works. |
-| Jinja2 | string formatting / f-strings | Never for templates. f-strings at scale become unmaintainable. Jinja2 separates template from logic cleanly. |
-| structured outputs (output_config.format) | instructor library | If you need more complex Pydantic retry/validation logic. For this project's batch curation use case, native structured outputs are sufficient and add no dependency. |
+|---|---|---|
+| native `fetch` | `node-fetch` / `axios` / `undici` explicit | Never — Node 20's global `fetch` covers every callsite in this pipeline. Pull in `undici` only if you need HTTP/2 or long-lived keep-alive pools (neither applies to a daily batch job). |
+| `fast-xml-parser` | `rss-parser` / `feedparser-rs` | Only if RSS coverage breaks on a real feed. `fast-xml-parser` has handled every feed in `src/collectors/rss.ts` so far; swap the parser, not the collector. |
+| `node-html-parser` | `cheerio` / `jsdom` | Only if GitHub Trending adds JS-rendered content. Both are drop-in for the one scrape callsite, but heavier. |
+| hand-rolled `mapWithConcurrency` | `p-limit` / `p-map` | If another concurrency callsite shows up. One utility plus one call is not enough to justify a dep. |
+| `zod` | `valibot` / `arktype` / `io-ts` | Only if a future hot path measurably regresses on zod parse. Zod is already a transitive of `@anthropic-ai/sdk`'s structured-output path — using anything else would ship two schema libraries. |
+| `tsx` direct execution | `ts-node` / pre-built `dist/` in CI | Use a pre-built `dist/` only if cold-start time on the runner becomes a bottleneck. Current full pipeline is well under GHA's 15-min cap. |
+
 ## What NOT to Use
 | Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| Tweepy + official Twitter/X API | The free tier is effectively write-only as of 2025. Read access for search requires Basic plan ($100/mo) at minimum, Pro ($5K/mo) for volume. Unsustainable for a daily newsletter. | RSS feeds from AI Twitter accounts via nitter alternatives, or simply skip Twitter as a source in v1. Twitter is deprioritized — HN + Reddit + GitHub Trending + RSS blogs are higher signal. |
-| Substack API | Does not exist. No programmatic publishing endpoint. | Buttondown (already decided). |
-| Scrapy | Heavy framework overhead for what are essentially 5-6 targeted fetches per day. Brings its own async model that conflicts with GitHub Actions straightforward scripting. | httpx for direct HTTP, feedparser for RSS, beautifulsoup4 for the one page-scrape target (GitHub Trending). |
-| Playwright / Selenium | Browser automation doesn't work reliably in GitHub Actions without custom runner setup and is slow. | API-based fetch exclusively. The project constraint is no browser automation. |
-| LangChain / LlamaIndex | Adds significant abstraction overhead for a pipeline that makes a handful of well-defined Claude API calls. Training data may be stale on LangChain versions. | Direct anthropic SDK calls with structured outputs. Stay at the API layer. |
-| community GitHub Trending APIs (ghapi.huchen.dev etc.) | Unofficial, routinely go offline without warning. A broken third-party dependency will silently kill the daily newsletter. | Direct BeautifulSoup scrape of github.com/trending. This page is stable HTML and doesn't require login. |
-| asyncpraw (async PRAW) | Adds complexity without benefit for a daily batch job that runs once. Not needed unless the pipeline becomes a long-running async service. | Synchronous praw in a normal Python script. |
-## Stack Patterns by Variant
-- Use the HN Algolia Search API (`https://hn.algolia.com/api/v1/search_by_date`) with `numericFilters=created_at_i>[unix_timestamp_24h_ago]`
-- Returns up to 1,000 results with pagination; no API key required
-- The Firebase API (`hacker-news.firebaseio.com/v0`) is the official API but requires fetching each story individually — slower for 300-500 stories. Algolia is the right choice for daily batch.
-- Scrape `https://github.com/trending?since=daily&spoken_language_code=en` with httpx + BeautifulSoup
-- GitHub's HTML for the trending page is stable and does not require authentication for public viewing
-- Use PyGithub only for follow-up metadata enrichment on repos that pass the relevance filter
-- Use read-only OAuth (script-type app) via praw. Does not require a Reddit account to be logged in, just app credentials.
-- Subreddits: r/LocalLLaMA, r/MachineLearning, r/mlops, r/OpenAI, r/LangChain — query `.hot()` or `.new()` with `time_filter='day'`
-- feedparser handles all well-known AI blogs (Simon Willison logbook, Towards Data Science, The Batch, etc.)
-- Pass a list of feed URLs to feedparser.parse() and filter `entry.published_parsed` against a 24-hour window
-- Use `claude-sonnet-4-6` (cost-effective, fast) with structured outputs
-- Use `output_config.format` with a JSON schema defining the `NewsItem` fields
-- Batch items in a single prompt per source (don't call Claude per item — batch to 20-50 items per call)
-- No beta header needed for structured outputs as of 2026
-- POST to `https://api.buttondown.com/v1/emails` with `Authorization: Token YOUR_API_KEY`
-- Set `status: "about_to_send"` to publish immediately, or `status: "scheduled"` + `publish_date` for timed send
-- Body is markdown-native; no HTML conversion needed
-- Budget $100/month for Basic API tier, or use a third-party scraping service (TwitterAPI.io ~$0.15/1K tweets)
-- Do NOT include Twitter as a v1 source without a funded plan. It will fail silently or raise auth errors and break the pipeline.
+|---|---|---|
+| `axios` / `node-fetch` | Both add a transitive footprint and ergonomic drift from the global `fetch` spec. Node 20 has `fetch`, `Response`, `AbortSignal.timeout`, `FormData` natively. | Native `fetch`. |
+| Twitter/X API (Tweepy analog / direct) | Free tier is effectively write-only since 2025. Read access starts at $100/mo. `src/collectors/twitter.ts` exists as a stub that always reports `skipped` in v1. | Re-enable only when a funded plan is in place. See `ENABLE_TWITTER` env flag. |
+| Playwright / Puppeteer | Browser automation is unreliable on GHA runners without custom setup. The project constraint is API-and-RSS only. | API fetch + `node-html-parser` for the one HTML scrape (GitHub Trending). |
+| LangChain / LlamaIndex / framework wrappers | Adds abstraction overhead for a pipeline that makes a handful of well-scoped Claude calls. Training-time recall on LC versions is stale. | Direct `@anthropic-ai/sdk` with `messages.parse` + zod. |
+| community GitHub Trending wrapper APIs | Unofficial, go offline without warning. | Direct HTML scrape of `github.com/trending` via `fetch` + `node-html-parser`. |
+| Python (`pydantic`, `feedparser`, `praw`, `PyGithub`, `Jinja2`, `uv`, …) | Earlier stack notes described a Python pipeline. **This project is TypeScript**; the Python stack was discarded. Keep this page honest. | The TypeScript equivalents above. |
+
+## Per-source patterns
+- **HN**: HN Algolia (`https://hn.algolia.com/api/v1/search_by_date`) with `numericFilters=created_at_i>…` — no API key, 1000-result pagination.
+- **GitHub Trending**: `fetch` + `node-html-parser` against `https://github.com/trending`. No official API exists.
+- **Reddit**: OAuth script-app via `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET`. Public fallback available via `REDDIT_FALLBACK_PUBLIC=1`. Skip entirely with `REDDIT_DISABLED=1`.
+- **RSS**: `fetch` + `fast-xml-parser` across a curated feed list in `src/collectors/rss.ts`.
+- **Twitter**: stub; emits `status=skipped` regardless of `ENABLE_TWITTER` value (see `src/collectors/twitter.ts`).
+- **Claude curation**: `claude-sonnet-4-6` via `messages.parse` with zod schema for structured output; chunked per `CURATOR_CHUNK_THRESHOLD`; cost ceiling enforced via `CURATOR_MAX_USD`. Model id is pinned in `src/curator/anthropicClient.ts` (`DEFAULT_MODEL`); a consistency test fails if it drifts from this file.
+- **Buttondown**: `POST https://api.buttondown.com/v1/emails` with `Authorization: Token $BUTTONDOWN_API_KEY`.
+
 ## Version Compatibility
-| Package | Compatible With | Notes |
-|---------|-----------------|-------|
-| anthropic 0.94.x | Python 3.9+ | Confirmed on PyPI. Use `output_config.format` (not deprecated `output_format`). |
-| pydantic 2.x | anthropic 0.94.x | Pydantic v2 is expected by anthropic SDK's typed response models. Do not use pydantic v1. |
-| feedparser 6.0.12 | Python 3.6+ | No known conflicts with httpx or praw. |
-| praw 7.8.1 | Python 3.8+ | No asyncpraw in stack — no conflict. |
-| PyGithub 2.9.0 | Python 3.9+ | Requires `requests` as a transitive dep — will be installed automatically. Does not conflict with httpx being the primary client. |
-| uv / astral-sh/setup-uv@v7 | GitHub Actions ubuntu-latest, macos-latest | Pin uv version in setup action for reproducibility. |
-## Sources
-- PyPI: `anthropic` — version 0.94.1, released 2026-04-13 (verified)
-- PyPI: `httpx` — version 0.28.1 (verified)
-- PyPI: `feedparser` — version 6.0.12, released 2025-09-10 (verified)
-- PyPI: `praw` — version 7.8.1, released 2024-10-25 (verified)
-- PyPI: `PyGithub` — version 2.9.0, released 2026-03-22 (verified)
-- PyPI: `Jinja2` — version 3.1.6 (verified)
-- PyPI: `Markdown` — version 3.10.2, released 2026-02-09 (verified)
-- platform.claude.com/docs/en/build-with-claude/structured-outputs — Structured outputs GA, `output_config.format`, supported models confirmed (verified)
-- docs.buttondown.com — API endpoint, auth method, status options confirmed (verified)
-- docs.astral.sh/uv/guides/integration/github — GitHub Actions uv integration pattern (verified)
-- hn.algolia.com/api — HN Algolia search endpoint for date-filtered queries (MEDIUM confidence — page did not load parameters directly, but endpoint is widely documented)
-- GitHub community discussion #161519 — Confirmed no official GitHub Trending API endpoint (verified)
-- WebSearch: Twitter API pricing tiers and free tier read restrictions (MEDIUM confidence — multiple sources agree)
+| Package | Minimum | Notes |
+|---|---|---|
+| Node.js | 20.11 | Required for native `fetch`, `AbortSignal.timeout`, `structuredClone`. |
+| TypeScript | 5.5 | `--moduleResolution bundler` / `verbatimModuleSyntax` combo used. |
+| zod | 3.23 | `@anthropic-ai/sdk` structured outputs expect zod v3. |
+| @anthropic-ai/sdk | 0.90 | `messages.parse` API GA. |
+| pnpm | 9.12 | Pinned via `packageManager` — mismatches on CI runners are loud, not silent. |
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->

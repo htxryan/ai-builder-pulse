@@ -53,18 +53,22 @@ export interface ArchiveResult {
   readonly sentinelPath: string;
 }
 
+/** Absolute path to `issues/{runDate}/` under `repoRoot`. */
 export function archiveDir(repoRoot: string, runDate: string): string {
   return path.join(repoRoot, "issues", runDate);
 }
 
+/** Path to the `.published` sentinel for `runDate`. Presence = C7 success. */
 export function sentinelPath(repoRoot: string, runDate: string): string {
   return path.join(archiveDir(repoRoot, runDate), ".published");
 }
 
+/** Path to `issue.md` — the exact body POSTed to Buttondown. */
 export function issueMdPath(repoRoot: string, runDate: string): string {
   return path.join(archiveDir(repoRoot, runDate), "issue.md");
 }
 
+/** Path to `items.json` — the structured record of scored items + summary. */
 export function itemsJsonPath(repoRoot: string, runDate: string): string {
   return path.join(archiveDir(repoRoot, runDate), "items.json");
 }
@@ -88,6 +92,11 @@ function writeSentinelAtomic(dest: string, publishId: string): void {
   writeFileAtomic(dest, `${publishId}\n`);
 }
 
+/**
+ * E6 C7 writer. Atomically writes `issue.md`, then `items.json`, then
+ * `.published` — in that order. Partial failures leave an orphaned `issue.md`
+ * for the next run's E-06 backfill to detect and re-publish.
+ */
 export function archiveRun(input: ArchiveInput): ArchiveResult {
   const dir = archiveDir(input.repoRoot, input.runDate);
   mkdirSync(dir, { recursive: true });

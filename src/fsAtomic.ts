@@ -7,6 +7,11 @@
 
 import { existsSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 
+/**
+ * Atomically write `contents` to `dest`. Writes to a sibling `.tmp`, then
+ * renames (atomic on same-FS POSIX). Cleans up the `.tmp` if the rename
+ * fails so no partial file is left for a later `git add` to stage.
+ */
 export function writeFileAtomic(dest: string, contents: string): void {
   const tmp = `${dest}.tmp`;
   try {

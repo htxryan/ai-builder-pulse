@@ -31,6 +31,11 @@ export interface UnpublishedDay {
   dir: string;
 }
 
+/**
+ * Scan `issues/` for prior-day dirs that have `issue.md` but no `.published`
+ * sentinel — the symptom of a partial archive or a failed `git push`. Returns
+ * the orphans sorted oldest-first.
+ */
 export function findUnpublished(
   repoRoot: string,
   currentRunDate: string,
@@ -97,6 +102,11 @@ export interface RunBackfillOpts {
   readonly publisher?: Publisher;
 }
 
+/**
+ * E-06 backfill. Re-publishes up to `maxAttempts` prior-day orphans (default 1)
+ * using the supplied publisher. Non-blocking: failures log `::error::` but do
+ * not abort today's run. DRY_RUN causes a detect-and-log-only pass.
+ */
 export async function runBackfill(
   repoRoot: string,
   currentRunDate: string,

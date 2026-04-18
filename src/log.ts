@@ -24,6 +24,10 @@ const KNOWN_SECRET_ENV_VARS = [
   "GITHUB_TOKEN",
 ] as const;
 
+/**
+ * Register a runtime value (typically an API key) for redaction. Values under
+ * 6 characters are ignored to avoid corrupting unrelated log content.
+ */
 export function registerSecret(value: string | undefined): void {
   // Guard against empty / short strings — redacting substrings of length < 6
   // creates noise and can corrupt legitimate log content (e.g., a 3-char
@@ -32,11 +36,12 @@ export function registerSecret(value: string | undefined): void {
   secrets.add(value);
 }
 
+/** Drop every registered secret. Test-only; no production callsite. */
 export function clearSecrets(): void {
   secrets.clear();
 }
 
-// Call once at process startup. Idempotent.
+/** Register every `KNOWN_SECRET_ENV_VARS` value. Idempotent; safe to re-run. */
 export function registerSecretsFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
@@ -61,6 +66,7 @@ function redact(text: string): string {
 // `clearRunId` at test teardown if needed.
 let boundRunId: string | undefined;
 
+/** Make a process-unique run correlation id: `YYYYMMDDThhmm-xxxxxx`. */
 export function makeRunId(now: Date = new Date()): string {
   // ISO ts (minute precision, no punctuation) + 6 hex chars from crypto
   // randomness. Minute precision keeps the id short and human-scannable
@@ -78,14 +84,17 @@ export function makeRunId(now: Date = new Date()): string {
   return `${stamp}-${suffix}`;
 }
 
+/** Attach `runId` to every subsequent log line in this process. */
 export function bindRunId(runId: string): void {
   boundRunId = runId;
 }
 
+/** Drop the bound runId (test teardown only). */
 export function clearRunId(): void {
   boundRunId = undefined;
 }
 
+/** The currently bound runId, or `undefined` if `bindRunId` was not called. */
 export function currentRunId(): string | undefined {
   return boundRunId;
 }
@@ -111,6 +120,12 @@ function emit(level: Level, msg: string, data?: Record<string, unknown>): void {
   }
 }
 
+/**
+ * Central logger. Emits JSON to stdout/stderr and writes GitHub Actions
+ * annotations (`::error::` / `::warning::`) for `warn`/`error`. Every line
+ * carries `runId` when `bindRunId` has been called. Registered secrets are
+ * redacted. `debug` is a no-op unless `DEBUG=1`.
+ */
 export const log = {
   info: (msg: string, data?: Record<string, unknown>) => emit("info", msg, data),
   warn: (msg: string, data?: Record<string, unknown>) => emit("warn", msg, data),
