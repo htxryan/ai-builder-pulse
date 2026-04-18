@@ -1,0 +1,32 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renderIssue (C5) > golden-file: deterministic snapshot for fixture input 1`] = `
+{
+  "body": "# AI Builder Pulse — 2026-04-18
+
+Today's briefing: 2 items curated for AI builders.
+
+## Tools & Launches
+
+### [Tool One](https://example.com/tool1)
+*Hacker News*
+
+Short description of the first tool.
+
+
+## Model Releases
+
+### [Model X Release](https://example.com/model-x)
+*Hacker News*
+
+A new model with interesting properties.
+
+
+---
+
+[AI Builder Pulse](https://buttondown.com/ai-builder-pulse) — daily briefing for engineers building with AI.
+Browse the [archive](https://buttondown.com/ai-builder-pulse/archive/) or [unsubscribe]({{unsubscribe_url}}).
+",
+  "subject": "AI Builder Pulse — 2026-04-18",
+}
+`;

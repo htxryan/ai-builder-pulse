@@ -11,13 +11,28 @@ import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import { log } from "./log.js";
 import { runBackfill } from "./backfill.js";
 import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
+import {
+  renderIssue,
+  RENDERER_TEMPLATE_URL_PATTERNS,
+  type RenderedIssue,
+} from "./renderer/index.js";
+import {
+  publishToButtondown,
+  PublishError,
+  type ButtondownPublishResult,
+} from "./publisher/index.js";
 import { deriveRunDate } from "./runDate.js";
 import type { RawItem, RunContext, ScoredItem, SourceSummary } from "./types.js";
+
+export interface Publisher {
+  publish(issue: RenderedIssue): Promise<ButtondownPublishResult>;
+}
 
 export interface OrchestratorOptions {
   now?: Date;
   repoRoot?: string;
   curator?: Curator;
+  publisher?: Publisher;
   fetchAll?: (ctx: RunContext) => Promise<{
     items: RawItem[];
     summary: SourceSummary;
@@ -29,7 +44,6 @@ export interface OrchestratorResult {
   runDate: string;
   status:
     | "published"
-    | "stub_no_publisher"
     | "dry_run"
     | "idempotent_skip"
     | "empty_skip"
@@ -40,6 +54,11 @@ export interface OrchestratorResult {
   // Per-source summary including pre-filter `keptCount`. Populated whenever
   // the run progressed past collection.
   summary?: SourceSummary;
+  // C5 render output — populated once kept items pass all gates. Surfaced so
+  // E6 (Archivist) can persist it without re-rendering.
+  rendered?: RenderedIssue;
+  // Buttondown publish id, only set on status === "published".
+  publishId?: string;
 }
 
 const DEFAULT_MIN_ITEMS = 5;
@@ -207,10 +226,15 @@ export async function runOrchestrator(
     return { runDate, status: "failed", reason: "E-05" };
   }
 
-  // Un-01 link-integrity gate. Allowlist is empty here — Renderer (E5) will
-  // add template-URL patterns before it emits markdown. Any URL in Claude
-  // output that does not trace back to a raw item fails the run.
-  const integrity = verifyLinkIntegrity(scored, filteredItems, []);
+  // Un-01 link-integrity gate. Renderer-owned allowlist exempts template
+  // URLs (newsletter home, archive, unsubscribe) that the Renderer will
+  // inject into the body. Any URL in Claude output that does not trace back
+  // to a raw item (and is not allowlisted) fails the run.
+  const integrity = verifyLinkIntegrity(
+    scored,
+    filteredItems,
+    RENDERER_TEMPLATE_URL_PATTERNS,
+  );
   if (!integrity.ok) {
     log.error("Un-01 link-integrity violation", {
       violationCount: integrity.violations.length,
@@ -244,23 +268,78 @@ export async function runOrchestrator(
     };
   }
 
+  // E5 C5 render. Happens even on DRY_RUN so operators see the exact body
+  // that would have been sent (O-02: "pipeline runs up to but not including
+  // the POST"). Renderer is pure so this is cheap.
+  const rendered = renderIssue(runDate, kept);
+  log.info("renderer complete", {
+    subjectLength: rendered.subject.length,
+    bodyLength: rendered.body.length,
+    itemCount: kept.length,
+  });
+
   if (dryRun) {
-    log.info("[DRY_RUN] would publish", { runDate, itemCount: kept.length });
-    return { runDate, status: "dry_run", scored, summary: filteredSummary };
+    log.info("[DRY_RUN] would publish", {
+      runDate,
+      itemCount: kept.length,
+      subject: rendered.subject,
+    });
+    return {
+      runDate,
+      status: "dry_run",
+      scored,
+      summary: filteredSummary,
+      rendered,
+    };
   }
 
-  // E1 does not wire real Publisher/Archivist — those land in E5/E6.
-  // Return a distinct status so downstream gates do not mistake this for a
-  // real publish. Until E5 lands, this path also exits non-zero in src/index.ts.
-  log.error(
-    "E1 foundation: publisher not yet wired (E5); refusing to report published",
-    { runDate, itemCount: kept.length },
-  );
+  // E5 Publisher. Default adapter POSTs to Buttondown; tests and E7 wire a
+  // fake via opts.publisher. BUTTONDOWN_API_KEY is read lazily so DRY_RUN
+  // and skip paths do not require the secret.
+  const publisher = opts.publisher ?? defaultButtondownPublisher(env);
+  let publishResult: ButtondownPublishResult;
+  try {
+    publishResult = await publisher.publish(rendered);
+  } catch (err) {
+    const status = err instanceof PublishError ? err.status : undefined;
+    const attempts =
+      err instanceof PublishError ? err.attempts : undefined;
+    log.error("publish failed (E-04)", {
+      error: err instanceof Error ? err.message : String(err),
+      httpStatus: status,
+      attempts,
+    });
+    return {
+      runDate,
+      status: "failed",
+      reason: "publish_failed",
+      scored,
+      summary: filteredSummary,
+      rendered,
+    };
+  }
+
+  log.info("publish ok", {
+    runDate,
+    publishId: publishResult.id,
+    attempts: publishResult.attempts,
+  });
+
   return {
     runDate,
-    status: "stub_no_publisher",
-    reason: "publisher_not_implemented",
+    status: "published",
     scored,
     summary: filteredSummary,
+    rendered,
+    publishId: publishResult.id,
+  };
+}
+
+function defaultButtondownPublisher(env: NodeJS.ProcessEnv): Publisher {
+  return {
+    publish: async (issue) =>
+      publishToButtondown(issue, {
+        apiKey: env.BUTTONDOWN_API_KEY ?? "",
+      }),
   };
 }

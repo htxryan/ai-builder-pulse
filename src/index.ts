@@ -10,7 +10,7 @@ async function main(): Promise<void> {
       status: result.status,
       reason: result.reason,
     });
-    if (result.status === "failed" || result.status === "stub_no_publisher") {
+    if (result.status === "failed") {
       process.exit(1);
     }
     process.exit(0);

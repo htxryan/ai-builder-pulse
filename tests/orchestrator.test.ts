@@ -265,4 +265,82 @@ describe("runOrchestrator", () => {
     });
     expect(r.status).toBe("dry_run");
   });
+
+  it("E5 DRY_RUN renders issue but does not invoke publisher (O-02)", async () => {
+    let publishCalls = 0;
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1" },
+      fetchAll: fixtureFetch,
+      publisher: {
+        publish: async () => {
+          publishCalls += 1;
+          return { id: "should-not-be-called", attempts: 1, endpoint: "x" };
+        },
+      },
+    });
+    expect(r.status).toBe("dry_run");
+    expect(publishCalls).toBe(0);
+    expect(r.rendered).toBeDefined();
+    expect(r.rendered?.subject).toBe("AI Builder Pulse — 2026-04-18");
+    expect(r.rendered?.body).toContain("# AI Builder Pulse — 2026-04-18");
+  });
+
+  it("E5 publishes via injected publisher and returns publishId", async () => {
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch,
+      publisher: {
+        publish: async (issue) => {
+          expect(issue.subject).toBeDefined();
+          return {
+            id: "em_published_1",
+            attempts: 1,
+            endpoint: "https://api.buttondown.com/v1/emails",
+          };
+        },
+      },
+    });
+    expect(r.status).toBe("published");
+    expect(r.publishId).toBe("em_published_1");
+    expect(r.rendered).toBeDefined();
+  });
+
+  it("E5 publisher failure maps to status=failed with publish_failed reason", async () => {
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch,
+      publisher: {
+        publish: async () => {
+          throw new Error("boom");
+        },
+      },
+    });
+    expect(r.status).toBe("failed");
+    expect(r.reason).toBe("publish_failed");
+    expect(r.rendered).toBeDefined(); // still surfaced for triage
+  });
+
+  it("E5 S-02 empty skip does NOT call publisher", async () => {
+    let publishCalls = 0;
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_ITEMS_TO_PUBLISH: "100", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch,
+      publisher: {
+        publish: async () => {
+          publishCalls += 1;
+          return { id: "x", attempts: 1, endpoint: "x" };
+        },
+      },
+    });
+    expect(r.status).toBe("empty_skip");
+    expect(publishCalls).toBe(0);
+  });
 });
