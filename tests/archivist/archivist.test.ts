@@ -135,17 +135,11 @@ describe("archiveRun", () => {
     expect(readFileSync(sentinelPath(root, runDate), "utf8").trim()).toBe("em_2");
   });
 
-  it("writes .published LAST so a mid-run crash leaves E-06 able to detect orphaned issue.md", () => {
-    // Simulate a mid-run crash AFTER issue.md + items.json but BEFORE
-    // .published by hand-wiring a failure into writeFileSync via a file
-    // that already exists as a directory (rename will fail). Rather than
-    // patching fs, we assert the invariant the contract actually cares
-    // about: backfill's detection gate observes (issue.md OR items.json)
-    // without .published and classifies the day as a backfill candidate.
-    // See tests/backfill for that behaviour; here we assert all three
-    // land on a successful write and the sentinel carries the publishId
-    // (proving it was the last write — a partial process would show up
-    // as missing sentinel).
+  it("writes all three files on a successful run with the sentinel carrying the publishId", () => {
+    // The crash-ordering contract (issue.md / items.json present WITHOUT
+    // .published → E-06 backfill candidate) is covered in tests/backfill.
+    // Here we only assert the happy-path final state: all three files
+    // land and the sentinel holds the expected publishId.
     archiveRun({
       runDate,
       repoRoot: root,

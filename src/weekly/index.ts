@@ -32,6 +32,7 @@ export interface WeeklyOptions {
 
 export type WeeklyStatus =
   | "published"
+  | "published_sentinel_failed"
   | "dry_run"
   | "no_days_available"
   | "idempotent_skip"
@@ -209,10 +210,14 @@ export async function runWeeklyDigest(
       attempts: result.attempts,
     });
     // Weekly sentinel AFTER publish 2xx (C7-equivalent for weekly). Next
-    // run sees this and short-circuits.
+    // run sees this and short-circuits. If the write fails, surface via a
+    // distinct status so src/index.ts exits non-zero — otherwise the NEXT
+    // cron has no sentinel to key off of and will re-send the digest.
+    let sentinelOk = true;
     try {
       writeFileAtomic(weeklySentinelPath(repoRoot, weekId), `${result.id}\n`);
     } catch (err) {
+      sentinelOk = false;
       log.error(
         "weekly sentinel write failed (publish already succeeded — divergence risk)",
         {
@@ -224,7 +229,7 @@ export async function runWeeklyDigest(
     }
     return {
       weekId,
-      status: "published",
+      status: sentinelOk ? "published" : "published_sentinel_failed",
       availableDays: availableDays.map((d) => d.runDate),
       missingDays,
       digestPath: dest,
