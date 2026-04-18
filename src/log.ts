@@ -1,5 +1,9 @@
 type Level = "info" | "warn" | "error" | "debug";
 
+function sanitizeAnnotation(s: string): string {
+  return s.replace(/[\r\n]+/g, " ");
+}
+
 function emit(level: Level, msg: string, data?: Record<string, unknown>): void {
   const payload = {
     ts: new Date().toISOString(),
@@ -9,10 +13,10 @@ function emit(level: Level, msg: string, data?: Record<string, unknown>): void {
   };
   const line = JSON.stringify(payload);
   if (level === "error") {
-    console.error(`::error::${msg}`);
+    console.error(`::error::${sanitizeAnnotation(msg)}`);
     console.error(line);
   } else if (level === "warn") {
-    console.warn(`::warning::${msg}`);
+    console.warn(`::warning::${sanitizeAnnotation(msg)}`);
     console.warn(line);
   } else {
     console.log(line);

@@ -20,9 +20,9 @@ describe("RawItem schema", () => {
     expect(RawItemSchema.parse(baseRaw)).toMatchObject({ id: "hn-1" });
   });
 
-  it("rejects Record<string, unknown> metadata (closed schema)", () => {
-    const bad = { ...baseRaw, metadata: { source: "hn", arbitrary: 1 } as unknown };
-    expect(RawItemSchema.safeParse(bad).success).toBe(true);
+  it("requires metadata to carry a known source discriminator (U-01)", () => {
+    const bad = { ...baseRaw, metadata: { source: "unknown-source", x: 1 } };
+    expect(RawItemSchema.safeParse(bad).success).toBe(false);
   });
 
   it("rejects unknown source", () => {

@@ -33,6 +33,19 @@ export interface OrchestratorResult {
 const DEFAULT_MIN_ITEMS = 5;
 const DEFAULT_MIN_SOURCES = 2;
 
+function parsePositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+): number {
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new Error(`Invalid env ${name}=${raw} (expected non-negative number)`);
+  }
+  return n;
+}
+
 async function mockFetchAll(ctx: RunContext): Promise<{
   items: RawItem[];
   summary: SourceSummary;
@@ -119,8 +132,16 @@ export async function runOrchestrator(
     runDate,
     dryRun,
     repoRoot,
-    minItemsToPublish: Number(env.MIN_ITEMS_TO_PUBLISH ?? DEFAULT_MIN_ITEMS),
-    minSources: Number(env.MIN_SOURCES ?? DEFAULT_MIN_SOURCES),
+    minItemsToPublish: parsePositiveInt(
+      env.MIN_ITEMS_TO_PUBLISH,
+      DEFAULT_MIN_ITEMS,
+      "MIN_ITEMS_TO_PUBLISH",
+    ),
+    minSources: parsePositiveInt(
+      env.MIN_SOURCES,
+      DEFAULT_MIN_SOURCES,
+      "MIN_SOURCES",
+    ),
   };
 
   log.info("orchestrator start", {
