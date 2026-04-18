@@ -62,4 +62,12 @@ describe("validateUrlShape (Un-02)", () => {
       validateUrlShape("https://github.com/orgs/anthropics/repositories").ok,
     ).toBe(true);
   });
+
+  it("tags github navigation paths with github_non_article (not user_profile)", () => {
+    for (const p of ["explore", "trending", "marketplace", "settings", "topics"]) {
+      const r = validateUrlShape(`https://github.com/${p}`);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason).toBe("github_non_article");
+    }
+  });
 });

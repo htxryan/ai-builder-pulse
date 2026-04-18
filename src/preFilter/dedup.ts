@@ -21,6 +21,10 @@ const SOURCE_AUTHORITY: Readonly<Record<Source, number>> = {
 export interface DedupResult {
   readonly kept: RawItem[];
   readonly removed: RawItem[];
+  // Items dropped because normalizeUrl() returned null. Tracked separately
+  // from `removed` (which counts genuine duplicates) so stats don't conflate
+  // normalization failures with duplicate-collapse events.
+  readonly normFailed: RawItem[];
 }
 
 function preferLeft(a: RawItem, b: RawItem): boolean {
@@ -28,23 +32,24 @@ function preferLeft(a: RawItem, b: RawItem): boolean {
   const authA = SOURCE_AUTHORITY[a.source] ?? 0;
   const authB = SOURCE_AUTHORITY[b.source] ?? 0;
   if (authA !== authB) return authA > authB;
-  // Final tie-breaker: strict id ordering so dedup is deterministic across runs.
-  // Strict `<` (not `<=`) ensures antisymmetry — the rare case of equal ids
-  // across sources reduces to "first-seen wins" via the caller's iteration
-  // order rather than a non-decision.
+  // Final tie-breaker: strict id ordering keeps dedup deterministic across
+  // runs. When ids are also equal, `<` returns false and the first-seen item
+  // wins via the caller's iteration order.
   return a.id < b.id;
 }
 
 // Un-03: collapse items sharing the same normalized URL to the highest-score
-// /most-authoritative survivor. Items whose URL fails to normalize are dropped
-// here too (a defense-in-depth for Un-02 if the shape gate is bypassed).
+// /most-authoritative survivor. Items whose URL fails to normalize are
+// surfaced in `normFailed` (defense-in-depth for Un-02 if the shape gate is
+// bypassed); they are NOT counted as duplicates.
 export function dedupByUrl(items: readonly RawItem[]): DedupResult {
   const map = new Map<string, RawItem>();
   const removed: RawItem[] = [];
+  const normFailed: RawItem[] = [];
   for (const item of items) {
     const norm = normalizeUrl(item.url);
     if (norm === null) {
-      removed.push(item);
+      normFailed.push(item);
       continue;
     }
     const existing = map.get(norm);
@@ -59,5 +64,5 @@ export function dedupByUrl(items: readonly RawItem[]): DedupResult {
       removed.push(item);
     }
   }
-  return { kept: [...map.values()], removed };
+  return { kept: [...map.values()], removed, normFailed };
 }

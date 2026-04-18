@@ -16,9 +16,7 @@ const TRACKING_PARAM_PATTERNS: readonly RegExp[] = [
   /^_hsmi$/i,
   /^mkt_tok$/i,
   /^vero_id$/i,
-  /^ref$/i,
-  /^ref_src$/i,
-  /^ref_url$/i,
+  /^ref(_|$)/i,
   /^igshid$/i,
   /^yclid$/i,
   /^msclkid$/i,
@@ -61,10 +59,15 @@ export function normalizeUrl(input: string): string | null {
   const entries = [...u.searchParams.entries()].filter(
     ([key]) => !isTrackingParam(key),
   );
-  entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  // Secondary sort on value ensures stable ordering for duplicate keys (?a=2&a=1)
+  // without relying on JS engine stable-sort guarantees for dedup-key stability.
+  entries.sort(([ka, va], [kb, vb]) => {
+    if (ka !== kb) return ka < kb ? -1 : 1;
+    return va < vb ? -1 : va > vb ? 1 : 0;
+  });
   const sorted = new URLSearchParams();
   for (const [k, v] of entries) sorted.append(k, v);
-  u.search = sorted.toString() ? `?${sorted.toString()}` : "";
+  u.search = sorted.toString();
 
   if (u.pathname.length > 1 && u.pathname.endsWith("/")) {
     u.pathname = u.pathname.replace(/\/+$/g, "") || "/";

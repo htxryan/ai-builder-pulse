@@ -33,7 +33,7 @@ export interface OrchestratorResult {
   reason?: string;
   scored?: ScoredItem[];
   // Per-source summary including pre-filter `keptCount`. Populated whenever
-  // the run progressed past collection. Consumed by E5/E6 for items.json.
+  // the run progressed past collection.
   summary?: SourceSummary;
 }
 
@@ -139,6 +139,7 @@ export async function runOrchestrator(
     invalidDateDropped: preFiltered.stats.invalidDateDropped,
     shapeDropped: preFiltered.stats.shapeDropped,
     duplicateDropped: preFiltered.stats.duplicateDropped,
+    normFailDropped: preFiltered.stats.normFailDropped,
     outputCount: preFiltered.stats.outputCount,
   });
   const filteredItems = preFiltered.items;

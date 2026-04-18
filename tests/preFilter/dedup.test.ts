@@ -59,7 +59,7 @@ describe("dedupByUrl (Un-03)", () => {
     expect(r.kept[0]?.id).toBe("r");
   });
 
-  it("drops items whose URL fails to normalize", () => {
+  it("separates norm-failures from duplicate removals", () => {
     const bad: RawItem = {
       ...hn("bad", "https://example.com/x"),
       url: "javascript:alert(1)" as unknown as string,
@@ -67,7 +67,8 @@ describe("dedupByUrl (Un-03)", () => {
     const good = hn("ok", "https://example.com/y");
     const r = dedupByUrl([bad, good]);
     expect(r.kept.map((i) => i.id)).toEqual(["ok"]);
-    expect(r.removed.map((i) => i.id)).toEqual(["bad"]);
+    expect(r.removed.map((i) => i.id)).toEqual([]);
+    expect(r.normFailed.map((i) => i.id)).toEqual(["bad"]);
   });
 
   it("is order-stable for repeated runs (same input → same kept set)", () => {

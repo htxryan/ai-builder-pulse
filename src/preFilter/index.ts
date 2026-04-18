@@ -18,6 +18,7 @@ export interface PreFilterStats {
   readonly invalidDateDropped: number;
   readonly shapeDropped: number;
   readonly duplicateDropped: number;
+  readonly normFailDropped: number;
   readonly outputCount: number;
 }
 
@@ -66,15 +67,22 @@ export function applyPreFilter(
   const shapeOk: RawItem[] = [];
   let shapeDropped = 0;
   for (const item of fresh) {
-    if (validateUrlShape(item.url).ok) {
+    const verdict = validateUrlShape(item.url);
+    if (verdict.ok) {
       shapeOk.push(item);
     } else {
       shapeDropped += 1;
+      log.warn("pre-filter dropped item by URL shape", {
+        id: item.id,
+        source: item.source,
+        reason: verdict.reason,
+      });
     }
   }
 
-  const { kept, removed } = dedupByUrl(shapeOk);
+  const { kept, removed, normFailed } = dedupByUrl(shapeOk);
   const duplicateDropped = removed.length;
+  const normFailDropped = normFailed.length;
 
   const stats: PreFilterStats = {
     inputCount: items.length,
@@ -82,6 +90,7 @@ export function applyPreFilter(
     invalidDateDropped,
     shapeDropped,
     duplicateDropped,
+    normFailDropped,
     outputCount: kept.length,
   };
 

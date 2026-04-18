@@ -6,7 +6,8 @@
 export type UrlShapeRejectReason =
   | "scheme_invalid"
   | "bare_domain"
-  | "github_user_profile";
+  | "github_user_profile"
+  | "github_non_article";
 
 export type UrlShapeResult =
   | { readonly ok: true }
@@ -14,16 +15,38 @@ export type UrlShapeResult =
 
 const GITHUB_HOSTS = new Set(["github.com", "www.github.com"]);
 
-// Allow GitHub paths that look like a real artifact, not a user profile.
-// `github.com/<user>` and `github.com/<user>/` are profiles; `github.com/<user>/<repo>`
-// (and deeper) are project pages. `github.com/orgs/<org>/...` is also a profile.
-function isGithubUserProfile(u: URL): boolean {
-  if (!GITHUB_HOSTS.has(u.hostname)) return false;
+// Single-segment github.com paths that are navigation / site features, not
+// user profiles. They share the rejection outcome with profiles but need a
+// distinct reason for accurate diagnostics.
+const GITHUB_NON_ARTICLE_SINGLE = new Set([
+  "explore",
+  "trending",
+  "marketplace",
+  "sponsors",
+  "settings",
+  "features",
+  "about",
+  "pricing",
+  "topics",
+  "login",
+  "signup",
+  "notifications",
+  "pulls",
+  "issues",
+  "codespaces",
+  "new",
+  "security",
+]);
+
+function classifyGithub(u: URL): UrlShapeRejectReason | null {
+  if (!GITHUB_HOSTS.has(u.hostname)) return null;
   const segments = u.pathname.split("/").filter((s) => s.length > 0);
-  if (segments.length === 0) return false; // bare-domain branch handles this
-  if (segments.length === 1) return true;
-  if (segments[0] === "orgs" && segments.length <= 2) return true;
-  return false;
+  const first = segments[0];
+  if (first === undefined) return null; // bare-domain branch handles this
+  if (GITHUB_NON_ARTICLE_SINGLE.has(first)) return "github_non_article";
+  if (segments.length === 1) return "github_user_profile";
+  if (first === "orgs" && segments.length <= 2) return "github_user_profile";
+  return null;
 }
 
 export function validateUrlShape(input: string): UrlShapeResult {
@@ -42,8 +65,9 @@ export function validateUrlShape(input: string): UrlShapeResult {
   if (!hasMeaningfulPath && !hasQuery) {
     return { ok: false, reason: "bare_domain" };
   }
-  if (isGithubUserProfile(u)) {
-    return { ok: false, reason: "github_user_profile" };
+  const githubReason = classifyGithub(u);
+  if (githubReason) {
+    return { ok: false, reason: githubReason };
   }
   return { ok: true };
 }
