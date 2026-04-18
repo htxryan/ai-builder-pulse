@@ -70,11 +70,23 @@ function sanitizeForLog(text: string, apiKey: string): string {
   return text.split(apiKey).join("[REDACTED]");
 }
 
+// Hard cap on error-body size. A pathological proxy returning megabytes of
+// HTML would otherwise fill logs and slow the retry loop. 1MB is generous for
+// a legitimate API error payload while bounding worst-case.
+const MAX_ERROR_BODY_BYTES = 1_000_000;
+
 async function readBodySafely(
   resp: Response,
   apiKey: string,
 ): Promise<string> {
   try {
+    const lenHeader = resp.headers.get("content-length");
+    if (lenHeader) {
+      const declared = Number.parseInt(lenHeader, 10);
+      if (Number.isFinite(declared) && declared > MAX_ERROR_BODY_BYTES) {
+        return `<body too large: ${declared} bytes>`;
+      }
+    }
     const text = await resp.text();
     // Truncate to keep logs bounded and avoid echoing large bodies that could
     // include sensitive context in a misconfigured proxy environment.

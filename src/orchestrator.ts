@@ -9,7 +9,7 @@ import {
 } from "./curator/index.js";
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
-import { bindRunId, log, makeRunId } from "./log.js";
+import { bindRunId, log, makeRunId, registerSecretsFromEnv } from "./log.js";
 import { runBackfill, type BackfillResult } from "./backfill.js";
 import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
 import { renderIssue, type RenderedIssue } from "./renderer/index.js";
@@ -145,6 +145,7 @@ export async function runOrchestrator(
   const dryRun = env.DRY_RUN === "1";
   const runId = makeRunId(now);
   bindRunId(runId);
+  registerSecretsFromEnv(env);
   const t0 = Date.now();
   const timings: StageTimings = {};
   const stage = async <T>(name: keyof StageTimings, fn: () => Promise<T>): Promise<T> => {
@@ -282,6 +283,7 @@ export async function runOrchestrator(
     inputCount: preFiltered.stats.inputCount,
     freshnessDropped: preFiltered.stats.freshnessDropped,
     invalidDateDropped: preFiltered.stats.invalidDateDropped,
+    futureDropped: preFiltered.stats.futureDropped,
     shapeDropped: preFiltered.stats.shapeDropped,
     duplicateDropped: preFiltered.stats.duplicateDropped,
     normFailDropped: preFiltered.stats.normFailDropped,

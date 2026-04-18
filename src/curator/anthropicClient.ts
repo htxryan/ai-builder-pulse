@@ -37,7 +37,7 @@ export type MessagesParseFn = (
   args: MessagesParseArgs,
 ) => Promise<MessagesParseResult>;
 
-const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_MAX_TOKENS = 16_000;
 
 function summarizeMetadata(item: RawItem): string {

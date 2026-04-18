@@ -45,4 +45,24 @@ describe("freshness gate (U-03 / S-01)", () => {
     expect(freshnessVerdict("2026-04-15T05:00:00.000Z", runDate)).toBe("stale");
     expect(freshnessVerdict("not-a-date", runDate)).toBe("invalid_date");
   });
+
+  it("flags clearly future-dated items as 'future' (past 1h skew tolerance)", () => {
+    const now = new Date("2026-04-18T12:00:00.000Z");
+    // 2 hours ahead — well past skew allowance.
+    expect(
+      freshnessVerdict("2026-04-18T14:00:00.000Z", runDate, 24, now),
+    ).toBe("future");
+    // Tomorrow-dated — clearly future.
+    expect(
+      freshnessVerdict("2026-04-19T12:00:00.000Z", runDate, 24, now),
+    ).toBe("future");
+  });
+
+  it("tolerates 1h of forward clock skew (not marked future)", () => {
+    const now = new Date("2026-04-18T12:00:00.000Z");
+    // 30 min ahead — within skew.
+    expect(
+      freshnessVerdict("2026-04-18T12:30:00.000Z", runDate, 24, now),
+    ).toBe("fresh");
+  });
 });

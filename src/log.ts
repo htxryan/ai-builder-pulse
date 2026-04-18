@@ -6,6 +6,54 @@ function sanitizeAnnotation(s: string): string {
   return s.replace(/[\r\n]+/g, " ");
 }
 
+// Central secret registry. Populated at startup from known env vars and
+// redacted out of every emitted log line — belt-and-braces defense against a
+// caller that accidentally includes a raw key in a `data` payload or an
+// `error.message` bubbled up from a transport failure.
+const secrets = new Set<string>();
+
+// Env vars we treat as secrets. Kept small and explicit so an operator can
+// grep this list and know what's covered. Add new names here as new secret
+// sources get introduced (never derive from arbitrary `*_KEY` matching — too
+// easy to pick up benign env vars like `SSH_AUTH_SOCK`).
+const KNOWN_SECRET_ENV_VARS = [
+  "ANTHROPIC_API_KEY",
+  "BUTTONDOWN_API_KEY",
+  "REDDIT_CLIENT_ID",
+  "REDDIT_CLIENT_SECRET",
+  "GITHUB_TOKEN",
+] as const;
+
+export function registerSecret(value: string | undefined): void {
+  // Guard against empty / short strings — redacting substrings of length < 6
+  // creates noise and can corrupt legitimate log content (e.g., a 3-char
+  // value could appear inside unrelated IDs or timestamps).
+  if (!value || value.length < 6) return;
+  secrets.add(value);
+}
+
+export function clearSecrets(): void {
+  secrets.clear();
+}
+
+// Call once at process startup. Idempotent.
+export function registerSecretsFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  for (const name of KNOWN_SECRET_ENV_VARS) {
+    registerSecret(env[name]);
+  }
+}
+
+function redact(text: string): string {
+  if (secrets.size === 0) return text;
+  let out = text;
+  for (const s of secrets) {
+    if (out.includes(s)) out = out.split(s).join("[REDACTED]");
+  }
+  return out;
+}
+
 // Process-scoped run correlation id. Every log line written during a single
 // orchestrator/weekly invocation shares this id so an operator can `grep
 // runId=<id>` to isolate all lines from one run across interleaved async
@@ -50,12 +98,13 @@ function emit(level: Level, msg: string, data?: Record<string, unknown>): void {
     ...(boundRunId ? { runId: boundRunId } : {}),
     ...(data ?? {}),
   };
-  const line = JSON.stringify(payload);
+  const line = redact(JSON.stringify(payload));
+  const annotation = redact(sanitizeAnnotation(msg));
   if (level === "error") {
-    console.error(`::error::${sanitizeAnnotation(msg)}`);
+    console.error(`::error::${annotation}`);
     console.error(line);
   } else if (level === "warn") {
-    console.warn(`::warning::${sanitizeAnnotation(msg)}`);
+    console.warn(`::warning::${annotation}`);
     console.warn(line);
   } else {
     console.log(line);

@@ -216,4 +216,24 @@ describe("publishToButtondown", () => {
       }),
     ).rejects.toThrow(/missing id/);
   });
+
+  it("caps large 4xx response bodies via Content-Length to avoid filling logs", async () => {
+    // Pathological proxy declares a 10MB body. We must not read it.
+    const fetchImpl = (async () =>
+      new Response("unused", {
+        status: 400,
+        headers: { "content-length": String(10_000_000) },
+      })) as unknown as typeof fetch;
+    try {
+      await publishToButtondown(ISSUE, {
+        apiKey: "k",
+        fetchImpl,
+        retry: { sleep: noSleep },
+      });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PublishError);
+      expect((err as Error).message).toMatch(/body too large/);
+    }
+  });
 });

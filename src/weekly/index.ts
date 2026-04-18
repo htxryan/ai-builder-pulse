@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { bindRunId, log, makeRunId } from "../log.js";
+import { bindRunId, log, makeRunId, registerSecretsFromEnv } from "../log.js";
 import { publishToButtondown, PublishError } from "../publisher/index.js";
 import type { Publisher } from "../orchestrator.js";
 import {
@@ -112,6 +112,7 @@ export async function runWeeklyDigest(
   const dryRun = env.DRY_RUN === "1";
   const runId = makeRunId(now);
   bindRunId(runId);
+  registerSecretsFromEnv(env);
   const t0 = Date.now();
   const timings: { loadDays?: number; buildDigest?: number; publish?: number; totalMs?: number } = {};
   const finish = (r: Omit<WeeklyResult, "runId" | "timings">): WeeklyResult => {

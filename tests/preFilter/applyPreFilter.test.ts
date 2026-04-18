@@ -153,6 +153,19 @@ describe("applyPreFilter", () => {
     expect(r.stats.freshnessDropped).toBe(0);
   });
 
+  it("counts future-dated items under futureDropped and excludes them from output", () => {
+    const now = new Date("2026-04-18T12:00:00.000Z");
+    const items = [
+      hn("ok", "https://example.com/x", "2026-04-18T06:00:00.000Z"),
+      // 2 hours past tolerated skew — clearly future.
+      hn("future", "https://example.com/y", "2026-04-19T12:00:00.000Z"),
+    ];
+    const r = applyPreFilter(items, runDate, collectorSummary, { now });
+    expect(r.stats.futureDropped).toBe(1);
+    expect(r.stats.freshnessDropped).toBe(0);
+    expect(r.items.map((i) => i.id)).toEqual(["ok"]);
+  });
+
   it("idempotent application also preserves the annotated summary shape", () => {
     const items = [
       hn("a", "https://example.com/x"),

@@ -16,6 +16,7 @@ export interface PreFilterStats {
   readonly inputCount: number;
   readonly freshnessDropped: number;
   readonly invalidDateDropped: number;
+  readonly futureDropped: number;
   readonly shapeDropped: number;
   readonly duplicateDropped: number;
   readonly normFailDropped: number;
@@ -24,6 +25,7 @@ export interface PreFilterStats {
 
 export interface PreFilterOptions {
   readonly freshnessHours?: number;
+  readonly now?: Date;
 }
 
 export interface PreFilterResult {
@@ -42,15 +44,17 @@ export function applyPreFilter(
   opts: PreFilterOptions = {},
 ): PreFilterResult {
   const hours = opts.freshnessHours;
+  const now = opts.now ?? new Date();
 
   const fresh: RawItem[] = [];
   let freshnessDropped = 0;
   let invalidDateDropped = 0;
+  let futureDropped = 0;
   for (const item of items) {
     const verdict =
       hours === undefined
-        ? freshnessVerdict(item.publishedAt, runDate)
-        : freshnessVerdict(item.publishedAt, runDate, hours);
+        ? freshnessVerdict(item.publishedAt, runDate, 24, now)
+        : freshnessVerdict(item.publishedAt, runDate, hours, now);
     if (verdict === "fresh") {
       fresh.push(item);
     } else if (verdict === "invalid_date") {
@@ -58,6 +62,13 @@ export function applyPreFilter(
       log.warn("pre-filter dropped item with unparseable publishedAt", {
         id: item.id,
         source: item.source,
+      });
+    } else if (verdict === "future") {
+      futureDropped += 1;
+      log.warn("pre-filter dropped future-dated item", {
+        id: item.id,
+        source: item.source,
+        publishedAt: item.publishedAt,
       });
     } else {
       freshnessDropped += 1;
@@ -88,6 +99,7 @@ export function applyPreFilter(
     inputCount: items.length,
     freshnessDropped,
     invalidDateDropped,
+    futureDropped,
     shapeDropped,
     duplicateDropped,
     normFailDropped,
