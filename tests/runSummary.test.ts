@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   appendGithubStepSummary,
   renderOrchestratorSummary,
+  renderRemoteSkipSummary,
   renderWeeklySummary,
 } from "../src/runSummary.js";
 import type { OrchestratorResult } from "../src/orchestrator.js";
@@ -188,6 +189,64 @@ describe("renderOrchestratorSummary", () => {
       }),
     );
     expect(md).toContain("http 500 \\| upstream-trace");
+  });
+
+  it("renders E-06 backfill section with zero-count hint when no orphans", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "published",
+        summary: sampleSummary(),
+        backfill: {
+          attempted: 0,
+          succeeded: 0,
+          failed: 0,
+          skippedOverCap: 0,
+          attemptedDates: [],
+        },
+      }),
+    );
+    expect(md).toContain("E-06 Backfill");
+    expect(md).toContain("no prior-day orphans detected");
+  });
+
+  it("renders E-06 backfill section with counts and attempted dates", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "published",
+        summary: sampleSummary(),
+        backfill: {
+          attempted: 1,
+          succeeded: 1,
+          failed: 0,
+          skippedOverCap: 2,
+          attemptedDates: ["2026-04-15"],
+        },
+      }),
+    );
+    expect(md).toContain("| attempted | 1 |");
+    expect(md).toContain("| succeeded | 1 |");
+    expect(md).toContain("| skippedOverCap | 2 |");
+    expect(md).toContain("2026-04-15");
+  });
+});
+
+describe("renderRemoteSkipSummary", () => {
+  it("renders a daily remote_idempotent_skip tile", () => {
+    const md = renderRemoteSkipSummary(
+      "daily",
+      "remote sentinel issues/2026-04-18/.published exists on origin/main",
+    );
+    expect(md).toContain("Daily run — remote_idempotent_skip");
+    expect(md).toContain("issues/2026-04-18/.published");
+  });
+
+  it("renders a weekly remote_idempotent_skip tile", () => {
+    const md = renderRemoteSkipSummary(
+      "weekly",
+      "remote sentinel weekly/2026-W16.published exists on origin/main",
+    );
+    expect(md).toContain("Weekly digest — remote_idempotent_skip");
+    expect(md).toContain("weekly/2026-W16.published");
   });
 });
 

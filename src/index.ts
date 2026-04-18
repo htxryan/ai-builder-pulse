@@ -5,12 +5,33 @@ import { log } from "./log.js";
 import {
   appendGithubStepSummary,
   renderOrchestratorSummary,
+  renderRemoteSkipSummary,
   renderWeeklySummary,
 } from "./runSummary.js";
 
 async function main(): Promise<void> {
   const mode = (process.env.MODE ?? "daily").toLowerCase();
   try {
+    // Un-06 remote-idempotency short-circuit. The workflow's pre-flight step
+    // (daily.yml / weekly.yml) probes the remote for the sentinel that would
+    // have been written by a prior successful run. If present, it exports
+    // SKIP_RUN=1 and we bail BEFORE building a publisher, calling any API,
+    // or running the pipeline. Exits 0: this is an expected no-op, not a
+    // failure. The step summary records it so operators see "why nothing ran".
+    if (process.env.SKIP_RUN === "1") {
+      const skipReason =
+        process.env.SKIP_RUN_REASON ?? "remote sentinel present";
+      log.info("remote_idempotent_skip", { mode, skipReason });
+      try {
+        appendGithubStepSummary(renderRemoteSkipSummary(mode, skipReason));
+      } catch (err) {
+        log.warn("remote skip summary write failed (non-blocking)", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      process.exit(0);
+    }
+
     if (mode === "weekly") {
       const result = await runWeeklyDigest();
       try {

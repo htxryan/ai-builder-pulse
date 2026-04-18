@@ -41,10 +41,12 @@ committed depending on when the failure occurred.
 1. Search the log for `archivist write failed` — the message includes the
    underlying fs error.
 2. Check disk space / permissions on the workflow runner (rare).
-3. Confirm the next cron run's backfill scan detects the unpublished day.
-   The backfill will re-emit the archive; **do not re-run the daily
-   manually** — the sentinel check alone is not enough to prevent a
-   duplicate send without the `.published` file.
+3. The next cron's E-06 backfill will attempt to re-publish the day if
+   `items.json` survived. See "duplicate send recovery" below for the
+   decision tree — in particular, if `items.json` is missing the backfill
+   cannot reconstruct the kept set and will fail; an operator must then
+   either restore `items.json` from prior logs or manually close out the
+   Buttondown draft.
 
 ### `dry_run`
 
@@ -276,6 +278,91 @@ written to `weekly/<weekId>.md` for inspection; no sentinel was written.
 2. `4xx` → check API key / payload; `5xx` → retry.
 3. Because there is no sentinel, a re-run after the incident clears will
    re-publish cleanly.
+
+## Duplicate send recovery (Un-06)
+
+The worst failure mode this pipeline can produce is a duplicate daily/weekly
+send to subscribers. This section is the decision tree for recovering from
+every variant.
+
+### The three disk-state variants after a failed run
+
+1. **Runner died before the Buttondown POST.** Nothing was sent. Next cron
+   runs cleanly. No action required.
+2. **Buttondown POST succeeded, archivist partial-write.** `issue.md` and/or
+   `items.json` landed but `.published` did not. Next cron's **E-06
+   backfill** kicks in. If `items.json` is present, the pipeline re-reads it,
+   re-renders deterministically (same bytes as before — the renderer is
+   pure), POSTs again to Buttondown, and writes `.published` on 2xx. If
+   `items.json` is missing, the backfill fails with an `::error::`
+   annotation; manual intervention required.
+3. **Buttondown POST succeeded AND archive committed locally AND
+   `git push` failed.** The archive (including `.published`) never reached
+   origin. The next cron starts from a clean checkout that DOES NOT contain
+   `.published`. The workflow's pre-flight step (`Pre-flight remote sentinel
+   check` in `daily.yml` / `weekly.yml`) runs `git ls-tree` against
+   `origin/{ref}` to check for `issues/{today}/.published` —
+   this is the authoritative source for "did we already send". Since the
+   sentinel is not on origin, the pre-flight clears `SKIP_RUN` and the
+   orchestrator runs, which is the DANGEROUS path. See below for the
+   mitigation.
+
+### Mitigation for variant 3 (failed push after successful publish)
+
+The `Push daily archive` step exits 1 when `git push` fails, with a loud
+`::error::` annotation. The workflow is visibly broken until an operator
+acts. Required action before the next cron fires (06:07 UTC daily,
+14:30 UTC Monday weekly):
+
+1. Pull the archive commit onto your local branch and retry the push:
+   `git fetch origin && git push origin HEAD:{ref}`. If that succeeds,
+   the next cron will remote-sentinel-skip cleanly. Done.
+2. If the push is permanently blocked (branch protection rule changed,
+   token rotated, etc.): go to the Buttondown dashboard and **delete the
+   sent issue** before the next cron fires. The orchestrator will then
+   re-collect, re-curate, and re-send — which is equivalent to the
+   original send since content ordering is deterministic within a runDate
+   but the curator pass will reselect based on fresh relevance scores.
+   This is acceptable only if the daily issue has not yet been broadly
+   opened (most subscribers read newsletters within the first hour).
+3. If neither option is viable, manually disable the cron by commenting
+   out `schedule:` in the workflow file, push the disable, and escalate.
+
+### Backfill cap (snowball protection)
+
+E-06 re-publishes **at most one** prior-day orphan per cron run by
+default. If the workflow is broken across multiple days, earlier orphans
+are recovered first (ascending date order). Extras emit a
+`::warning::` with the deferred dates so operators can see the backlog.
+
+If you need to catch up faster (e.g. the workflow was disabled for a week
+and five days are orphaned), dispatch the workflow manually with a higher
+`maxAttempts` — NOT implemented today as a workflow_dispatch input; the
+fastest path is to bump the default in `runBackfill` behind a feature
+branch, PR, and merge. Deliberate operator action only.
+
+### Backfill in the job summary
+
+Every daily run renders an **E-06 Backfill** section in its job summary
+showing `attempted / succeeded / failed / skippedOverCap` plus the
+`attemptedDates`. On a clean day the section reads
+`_(no prior-day orphans detected)_`. Anything else requires attention —
+especially a `failed` count > 0, which indicates an orphan the pipeline
+could not recover (inspect the logs for the underlying publisher error).
+
+### `remote_idempotent_skip` (workflow pre-flight)
+
+**Meaning.** The daily or weekly workflow ran and its pre-flight step
+found the period's sentinel already present on origin. The orchestrator
+was not invoked — no collection, no curation, no Buttondown calls.
+
+**Subscriber impact.** None (original send already happened).
+
+**Troubleshooting.** No action required in the normal case — this is the
+correct behavior when a concurrent workflow_dispatch fires a second time
+for the same date. If `remote_idempotent_skip` shows up on the scheduled
+cron fire, somebody published this runDate manually earlier; confirm via
+`git log issues/{runDate}/.published`.
 
 ## Common fields in the job summary
 

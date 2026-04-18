@@ -44,6 +44,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
+      # Un-06 remote-idempotency pre-flight. If the remote already has
+      # `issues/{today}/.published`, a prior run for this runDate already
+      # sent the email. Export SKIP_RUN=1 so `src/index.ts` short-circuits
+      # BEFORE any Claude/Buttondown calls. `git ls-tree` against the
+      # tracked remote ref is authoritative: unlike a local existsSync on
+      # the runner checkout, it can't be fooled by a stale local cache.
+      - name: Pre-flight remote sentinel check
+        id: preflight
+        run: |
+          set -euo pipefail
+          RUN_DATE="$(date -u +%Y-%m-%d)"
+          SENTINEL="issues/${RUN_DATE}/.published"
+          # -r recursive; --name-only prints just the path; 2>/dev/null
+          # swallows the "not in tree" case (which is the happy path for
+          # a new day with no prior send).
+          if git ls-tree -r --name-only "origin/${GITHUB_REF_NAME}" -- "$SENTINEL" 2>/dev/null | grep -Fxq "$SENTINEL"; then
+            echo "::warning::Un-06 remote-idempotency: ${SENTINEL} already present on origin — short-circuiting"
+            echo "SKIP_RUN=1" >> "$GITHUB_ENV"
+            echo "SKIP_RUN_REASON=remote sentinel ${SENTINEL} exists on origin/${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "no remote sentinel for ${RUN_DATE} — proceeding"
+          fi
       - name: Run orchestrator
         id: orchestrator
         run: pnpm start
@@ -77,13 +99,17 @@ jobs:
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Un-06 REALITY CHECK: if `git push` fails after the Buttondown 2xx,
-      # the archive commit stays only on the ephemeral runner. The next
-      # cron starts from a clean checkout — no issue.md, no .published —
-      # so the backfill scan finds nothing and the orchestrator runs
-      # normally, issuing a DUPLICATE send. Backfill detect-only protects
-      # the in-process partial-write case, NOT a failed push. A proper
-      # remote-side guard is future work.
+      # Un-06: if `git push` fails after the Buttondown 2xx, the archive
+      # commit (including `.published`) stays only on the ephemeral runner.
+      # The next cron run's pre-flight `git ls-tree origin/...` will NOT
+      # see the sentinel, so SKIP_RUN stays unset and the orchestrator
+      # would re-send. Mitigation: the orchestrator itself runs the E-06
+      # backfill on the NEXT run and re-publishes only days it finds
+      # orphaned on disk — which, after a failed push, is none. The
+      # definitive remote-side guard is THIS step exiting 1 so the
+      # workflow is visibly broken; an operator must either restore the
+      # push manually or delete the corresponding Buttondown draft before
+      # the next cron fires.
       - name: Push daily archive
         if: ${{ steps.commit.outputs.committed == 'true' }}
         run: |
@@ -93,6 +119,6 @@ jobs:
           # insurance). Autostash preserves the just-made archive commit.
           git pull --rebase --autostash origin ${GITHUB_REF_NAME}
           if ! git push origin HEAD:${GITHUB_REF_NAME}; then
-            echo "::error::Un-06 DIVERGENCE — Buttondown publish succeeded but git push failed. The archive commit is stranded on this runner; the next run starts from a clean checkout and will re-collect + re-publish, sending a DUPLICATE to subscribers. Operator must investigate before the next cron fires (e.g. retry push from local, or pause the workflow)."
+            echo "::error::Un-06 DIVERGENCE — Buttondown publish succeeded but git push failed. The archive commit is stranded on this runner. Next run's remote sentinel pre-flight will NOT see this sentinel and would attempt to re-publish. Operator MUST investigate before the next cron fires: either retry the push, or delete the corresponding Buttondown issue and let the next run re-send cleanly."
             exit 1
           fi

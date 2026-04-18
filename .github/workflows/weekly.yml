@@ -43,6 +43,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
+      # Un-06 remote-idempotency pre-flight (weekly flavor). Mirrors the
+      # daily check against `weekly/{weekId}.published`. The weekId is
+      # anchored on *yesterday* so a Monday 14:30 UTC cron rolls up the
+      # preceding Sunday-inclusive week — matches `runWeeklyDigest`.
+      - name: Pre-flight remote sentinel check
+        id: preflight
+        run: |
+          set -euo pipefail
+          WEEK_ID="$(date -u -d 'yesterday' +%G-W%V)"
+          SENTINEL="weekly/${WEEK_ID}.published"
+          if git ls-tree -r --name-only "origin/${GITHUB_REF_NAME}" -- "$SENTINEL" 2>/dev/null | grep -Fxq "$SENTINEL"; then
+            echo "::warning::Un-06 remote-idempotency (weekly): ${SENTINEL} already present on origin — short-circuiting"
+            echo "SKIP_RUN=1" >> "$GITHUB_ENV"
+            echo "SKIP_RUN_REASON=remote sentinel ${SENTINEL} exists on origin/${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "no remote sentinel for ${WEEK_ID} — proceeding"
+          fi
       - name: Run weekly digest
         run: pnpm start
       - name: Commit weekly digest

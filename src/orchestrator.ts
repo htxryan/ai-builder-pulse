@@ -10,7 +10,7 @@ import {
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
 import { bindRunId, log, makeRunId } from "./log.js";
-import { runBackfill } from "./backfill.js";
+import { runBackfill, type BackfillResult } from "./backfill.js";
 import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
 import { renderIssue, type RenderedIssue } from "./renderer/index.js";
 import {
@@ -89,6 +89,11 @@ export interface OrchestratorResult {
   // Cost and token usage from the curator, if the curator exposes it.
   // MockCurator leaves this undefined; ClaudeCurator populates it.
   curatorMetrics?: CuratorMetrics | undefined;
+  // E-06 backfill summary. Captured regardless of whether the CURRENT run
+  // published or skipped — backfill is independent of today's runDate.
+  // Undefined only when backfill itself threw unexpectedly (logged as a
+  // non-blocking error) or when an early fail-fast exit preceded it.
+  backfill?: BackfillResult | undefined;
 }
 
 const DEFAULT_MIN_ITEMS = 5;
@@ -150,9 +155,22 @@ export async function runOrchestrator(
       timings[name] = Date.now() - start;
     }
   };
+  // Captured by `runBackfill` below. Defaulted here so early-return code paths
+  // (missing-api-key fail-fast) still surface an explicit zeroed backfill in
+  // the run summary rather than an ambiguous `undefined`.
+  let backfillResult: BackfillResult | undefined;
   const done = (result: Omit<OrchestratorResult, "runId" | "timings">): OrchestratorResult => {
     timings.totalMs = Date.now() - t0;
-    return { ...result, runId, timings };
+    // Backfill is orthogonal to every skip/fail status — always attach it so
+    // the operator can see whether a prior-day orphan was recovered even on
+    // a day when today itself was skipped/failed. Existing explicit values
+    // on `result` take precedence.
+    return {
+      ...result,
+      runId,
+      timings,
+      backfill: result.backfill ?? backfillResult,
+    };
   };
   const ctx: RunContext = {
     runDate,
@@ -179,16 +197,10 @@ export async function runOrchestrator(
     minSources: ctx.minSources,
   });
 
-  // E-06 backfill scan (detect-only in E1)
-  try {
-    await runBackfill(repoRoot, runDate, { dryRun });
-  } catch (err) {
-    log.warn("backfill scan failed (non-blocking)", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // S-03 sentinel check (bypassed when DRY_RUN)
+  // S-03 sentinel check first (idempotency trumps everything). An
+  // already-published runDate needs no key, no publisher, and no backfill —
+  // the entire pipeline skips cleanly. Bypassed under DRY_RUN so operators
+  // can preview an already-sent day.
   if (!dryRun && checkSentinel(repoRoot, runDate)) {
     log.info("S-03 idempotent skip: .published already exists", { runDate });
     return done({
@@ -202,9 +214,10 @@ export async function runOrchestrator(
   }
 
   // Fail-fast on missing publishing secret AFTER the sentinel check (an
-  // already-published runDate doesn't need a key) so we don't burn Claude
-  // curation budget collecting+scoring for a run that cannot publish. DRY_RUN
-  // and an injected publisher both bypass this check (tests, preview builds).
+  // already-published runDate doesn't need a key). Moved ABOVE the backfill
+  // call (vs. the original post-backfill placement) so E-06 has a real
+  // publisher to hand down when it re-publishes prior-day orphans.
+  // DRY_RUN and an injected publisher both bypass this check.
   if (!dryRun && opts.publisher === undefined) {
     const key = env.BUTTONDOWN_API_KEY ?? "";
     if (!key) {
@@ -217,6 +230,26 @@ export async function runOrchestrator(
         reason: "missing_api_key",
       });
     }
+  }
+
+  // Build the publisher once — shared by backfill (if any) and today's
+  // publish. Tests inject their own via opts.publisher.
+  const publisher = opts.publisher ?? defaultButtondownPublisher(env);
+
+  // E-06 backfill. Runs AFTER today's sentinel + key checks so we only
+  // attempt re-publish when we know we have a viable path to publish; but
+  // BEFORE collection so today's pipeline runs unimpeded. Cap at 1 per
+  // cron run (snowball protection); failures log ::error:: but never
+  // abort today's pipeline.
+  try {
+    backfillResult = await runBackfill(repoRoot, runDate, {
+      dryRun,
+      publisher,
+    });
+  } catch (err) {
+    log.error("backfill scan unexpectedly threw (non-blocking)", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   // Collect
@@ -387,10 +420,7 @@ export async function runOrchestrator(
     });
   }
 
-  // E5 Publisher. Default adapter POSTs to Buttondown; tests and E7 wire a
-  // fake via opts.publisher. BUTTONDOWN_API_KEY is read lazily so DRY_RUN
-  // and skip paths do not require the secret.
-  const publisher = opts.publisher ?? defaultButtondownPublisher(env);
+  // E5 Publisher. Already constructed above (shared with backfill).
   let publishResult: PublishOutcome;
   try {
     publishResult = await stage("publish", () => publisher.publish(rendered));

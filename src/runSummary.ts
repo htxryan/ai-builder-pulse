@@ -10,6 +10,7 @@ import { appendFileSync } from "node:fs";
 import type { OrchestratorResult, StageTimings } from "./orchestrator.js";
 import type { WeeklyResult, WeeklyStageTimings } from "./weekly/index.js";
 import type { SourceSummary } from "./types.js";
+import type { BackfillResult } from "./backfill.js";
 
 const STAGE_ORDER: readonly (keyof StageTimings)[] = [
   "collect",
@@ -75,6 +76,21 @@ function renderSourceRows(summary: SourceSummary | undefined): string {
   return rows.join("\n") + "\n";
 }
 
+function renderBackfillRows(bf: BackfillResult | undefined): string {
+  if (!bf || bf.attempted === 0) {
+    return "_(no prior-day orphans detected)_\n";
+  }
+  const rows: string[] = [];
+  rows.push("| Metric | Value |");
+  rows.push("|---|--:|");
+  rows.push(`| attempted | ${bf.attempted} |`);
+  rows.push(`| succeeded | ${bf.succeeded} |`);
+  rows.push(`| failed | ${bf.failed} |`);
+  rows.push(`| skippedOverCap | ${bf.skippedOverCap} |`);
+  rows.push(`| dates | \`${bf.attemptedDates.join(", ") || "—"}\` |`);
+  return rows.join("\n") + "\n";
+}
+
 function renderTimingRows(
   timings: StageTimings | WeeklyStageTimings,
   order: readonly string[],
@@ -115,6 +131,9 @@ export function renderOrchestratorSummary(r: OrchestratorResult): string {
   lines.push("### Sources");
   lines.push("");
   lines.push(renderSourceRows(r.summary));
+  lines.push("### E-06 Backfill");
+  lines.push("");
+  lines.push(renderBackfillRows(r.backfill));
   lines.push("### Stage timings");
   lines.push("");
   lines.push(renderTimingRows(r.timings, STAGE_ORDER));
@@ -140,6 +159,21 @@ export function renderWeeklySummary(r: WeeklyResult): string {
   lines.push("");
   lines.push(renderTimingRows(r.timings, WEEKLY_STAGE_ORDER));
   return lines.join("\n");
+}
+
+// Un-06 remote-idempotency short-circuit summary. Emitted when the workflow's
+// pre-flight detects the remote sentinel and sets SKIP_RUN=1, so an operator
+// browsing the Actions tab sees an explicit "why nothing ran" tile instead of
+// an empty summary.
+export function renderRemoteSkipSummary(mode: string, reason: string): string {
+  const label = mode === "weekly" ? "Weekly digest" : "Daily run";
+  return [
+    `## ⏭️ ${label} — remote_idempotent_skip`,
+    "",
+    `- **reason**: ${reason}`,
+    `- **action**: none — the sentinel on the remote proves this mode already ran for this period. The orchestrator was not invoked.`,
+    "",
+  ].join("\n");
 }
 
 // Append markdown to $GITHUB_STEP_SUMMARY if the env var is set. No-op locally.

@@ -229,9 +229,10 @@ describe("IV scenario 3 — S-05 minSources floor not met → source_floor_skip"
 // ---------- Scenario 4 ------------------------------------------------------
 // Un-06 divergence: publish returns 2xx, workflow `git push` fails OR the
 // archivist dies between issue.md and .published. On the NEXT run, E-06
-// backfill scan detects the orphan and warns. E1 is detect-only; E5/E6
-// would handle the actual re-publish hook.
-describe("IV scenario 4 — Un-06 divergence: next run's E-06 detects orphaned day", () => {
+// backfill reads the orphan's items.json, re-renders deterministically,
+// re-POSTs to Buttondown, and writes `.published` on 2xx — closing the
+// duplicate-send window that previously required manual recovery.
+describe("IV scenario 4 — Un-06 divergence: next run's E-06 re-publishes orphaned day", () => {
   let root: string;
   beforeEach(() => {
     root = mkdtempSync(path.join(tmpdir(), "abp-iv4-"));
@@ -240,70 +241,152 @@ describe("IV scenario 4 — Un-06 divergence: next run's E-06 detects orphaned d
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("full divergence cycle: day 1 writes issue.md but no .published; day 2 detects it", async () => {
-    // Day 1 simulated crash: archivist wrote issue.md but process died
-    // before .published. Equivalent surface to: buttondown 2xx + push
-    // succeeded + but sentinel write raced with shutdown.
-    const day1 = path.join(root, "issues", "2026-04-17");
-    mkdirSync(day1, { recursive: true });
-    writeFileSync(path.join(day1, "issue.md"), "# Day 1 — partial write");
+  // Writes the disk state the archivist leaves behind on a successful
+  // publish: issue.md + items.json, without .published (simulated crash or
+  // push failure).
+  function writeOrphanWithItems(runDate: string): void {
+    const dir = path.join(root, "issues", runDate);
+    mkdirSync(dir, { recursive: true });
+    const items: ScoredItem[] = Array.from({ length: 6 }, (_, i) => ({
+      id: `hn-${i}`,
+      source: "hn" as const,
+      title: `orphan title ${i}`,
+      url: `https://example.com/orphan-${i}`,
+      score: 10,
+      publishedAt: "2026-04-17T05:00:00.000Z",
+      metadata: { source: "hn" as const, points: 10 },
+      category: "Tools & Launches" as const,
+      relevanceScore: 0.9,
+      keep: true,
+      description:
+        "Prior-day orphan fixture description long enough to satisfy the schema minimum length.",
+    }));
+    writeFileSync(path.join(dir, "issue.md"), `# ${runDate}`);
     writeFileSync(
-      path.join(day1, "items.json"),
-      JSON.stringify({ runDate: "2026-04-17", items: [] }),
+      path.join(dir, "items.json"),
+      JSON.stringify({
+        runDate,
+        publishId: "em_orig",
+        publishedAt: `${runDate}T06:10:00.000Z`,
+        itemCount: { total: items.length, kept: items.length },
+        sourceSummary: { hn: { count: items.length, status: "ok" } },
+        items,
+      }),
     );
-    // Intentional: no .published file
+  }
 
-    // Day 2 orchestrator runs — backfill scan should detect the orphan.
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const orphans = findUnpublished(root, "2026-04-18");
-      expect(orphans).toHaveLength(1);
-      expect(orphans[0]!.runDate).toBe("2026-04-17");
-
-      // Running backfill in detect-mode emits a ::warning:: annotation but
-      // does not itself re-publish (E1 scope).
-      const result = await runBackfill(root, "2026-04-18", { dryRun: false });
-      expect(result.attempted).toBe(1);
-      expect(result.failed).toBe(1); // hook not wired — E1 detect-only
-      expect(result.succeeded).toBe(0);
-
-      // The warning annotation must have been emitted for oncall visibility.
-      const warnOutput = warnSpy.mock.calls
-        .flat()
-        .map((v) => (typeof v === "string" ? v : JSON.stringify(v)))
-        .join("\n");
-      expect(warnOutput).toContain("E-06 backfill");
-    } finally {
-      warnSpy.mockRestore();
-    }
+  it("detects orphan day and reports it via findUnpublished", () => {
+    writeOrphanWithItems("2026-04-17");
+    const orphans = findUnpublished(root, "2026-04-18");
+    expect(orphans).toHaveLength(1);
+    expect(orphans[0]!.runDate).toBe("2026-04-17");
   });
 
-  it("divergence does NOT block day 2's own publish pipeline", async () => {
-    // Prior day orphaned. Day 2 must still be able to publish its own issue —
-    // backfill scan is non-blocking.
-    const day1 = path.join(root, "issues", "2026-04-17");
-    mkdirSync(day1, { recursive: true });
-    writeFileSync(path.join(day1, "issue.md"), "# Day 1 orphan");
+  it("backfill re-publishes the orphan and writes .published", async () => {
+    writeOrphanWithItems("2026-04-17");
+    const publishCalls: string[] = [];
+    const publisher = {
+      async publish(issue: { subject: string; body: string }) {
+        publishCalls.push(issue.subject);
+        return { id: "em_backfill_17", attempts: 1 };
+      },
+    };
+    const result = await runBackfill(root, "2026-04-18", {
+      dryRun: false,
+      publisher,
+    });
+    expect(result.attempted).toBe(1);
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(publishCalls).toHaveLength(1);
+    expect(publishCalls[0]).toContain("2026-04-17");
+    expect(existsSync(path.join(root, "issues", "2026-04-17", ".published"))).toBe(true);
+  });
 
+  it("Un-06 full sequence: day 1 push fails → day 2 orchestrator backfills day 1 AND publishes day 2", async () => {
+    // Simulate the Un-06 failure mode surface: day 1 archivist wrote all
+    // three files (issue.md + items.json + .published) but workflow `git
+    // push` failed, so on day 2's fresh checkout only issue.md and
+    // items.json came back via `git pull` — IF they were on origin. Our
+    // simulated state: .published absent, items.json present (same as if
+    // the push actually landed without the sentinel, or partial disk
+    // state). Either way, backfill should recover.
+    writeOrphanWithItems("2026-04-17");
+
+    const publishes: string[] = [];
     const r = await runOrchestrator({
-      now: fixedNow,
+      now: fixedNow, // 2026-04-18T06:07
       repoRoot: root,
       env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
       fetchAll: fixtureFetch,
       publisher: {
-        async publish() {
-          return { id: "em_day2", attempts: 1 };
+        async publish(issue) {
+          // Single shared publisher across backfill + today — matches prod.
+          publishes.push(issue.subject);
+          if (issue.subject.includes("2026-04-17")) {
+            return { id: "em_recovered_17", attempts: 1 };
+          }
+          return { id: "em_today_18", attempts: 1 };
         },
       },
     });
+
+    // Today's run completed normally.
     expect(r.status).toBe("published");
-    expect(r.publishId).toBe("em_day2");
-    // Day 1 orphan still orphaned after day 2 run (E1 does not re-publish it)
-    expect(existsSync(path.join(day1, ".published"))).toBe(false);
-    // Day 2 archive written normally
+    expect(r.publishId).toBe("em_today_18");
+    // Backfill recovered day 1 inline with today's run.
+    expect(r.backfill?.attempted).toBe(1);
+    expect(r.backfill?.succeeded).toBe(1);
+    expect(r.backfill?.failed).toBe(0);
+    expect(r.backfill?.attemptedDates).toEqual(["2026-04-17"]);
+    // Both sentinels now exist on disk.
+    expect(
+      existsSync(path.join(root, "issues", "2026-04-17", ".published")),
+    ).toBe(true);
     expect(
       existsSync(path.join(root, "issues", "2026-04-18", ".published")),
     ).toBe(true);
+    // Publisher was called for day 1 (backfill) THEN day 2 (today).
+    expect(publishes).toHaveLength(2);
+    expect(publishes[0]).toContain("2026-04-17");
+    expect(publishes[1]).toContain("2026-04-18");
+  });
+
+  it("backfill failure (e.g. Buttondown 4xx) does NOT block today's publish", async () => {
+    writeOrphanWithItems("2026-04-17");
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      let publishCalls = 0;
+      const r = await runOrchestrator({
+        now: fixedNow,
+        repoRoot: root,
+        env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+        fetchAll: fixtureFetch,
+        publisher: {
+          async publish(issue) {
+            publishCalls++;
+            if (issue.subject.includes("2026-04-17")) {
+              throw new Error("Buttondown 400: validation error");
+            }
+            return { id: "em_today_18", attempts: 1 };
+          },
+        },
+      });
+      expect(r.status).toBe("published");
+      expect(r.publishId).toBe("em_today_18");
+      expect(r.backfill?.attempted).toBe(1);
+      expect(r.backfill?.failed).toBe(1);
+      expect(r.backfill?.succeeded).toBe(0);
+      // Orphan remains orphaned — operator intervention required, logged
+      // loudly via ::error:: annotation (spied above).
+      expect(
+        existsSync(path.join(root, "issues", "2026-04-17", ".published")),
+      ).toBe(false);
+      // Today's publish happened despite the backfill failure.
+      expect(publishCalls).toBe(2);
+    } finally {
+      errSpy.mockRestore();
+    }
   });
 });
 
@@ -520,6 +603,47 @@ describe("IV scenario 8 — Secret in RawItem.metadata: gitleaks scans committed
     expect(gitleaksIdx, "gitleaks-action step missing from daily.yml").toBeGreaterThan(0);
     expect(pushIdx, "'Push daily archive' step missing from daily.yml").toBeGreaterThan(0);
     expect(pushIdx).toBeGreaterThan(gitleaksIdx);
+  });
+});
+
+// ---------- Scenario 4b (Un-06 remote pre-flight contract check) -----------
+// The pre-flight step in daily.yml / weekly.yml is the Un-06 closure: a
+// failed push leaves no local sentinel on the next run's fresh checkout,
+// but `git ls-tree origin/{ref}` against the remote sees whatever's on
+// origin. We verify the workflow is wired correctly — the TS code can't
+// simulate a GHA runner, but it CAN enforce that the step exists, runs
+// before the orchestrator, and sets SKIP_RUN.
+describe("IV scenario 4b — Un-06 remote pre-flight wiring (daily + weekly workflows)", () => {
+  it("daily.yml runs pre-flight BEFORE the orchestrator and sets SKIP_RUN when sentinel is on origin", () => {
+    const workflow = readFileSync(
+      path.join(process.cwd(), ".github", "workflows", "daily.yml"),
+      "utf8",
+    );
+    const preflightIdx = workflow.indexOf("Pre-flight remote sentinel check");
+    const orchestratorIdx = workflow.indexOf("Run orchestrator");
+    expect(preflightIdx, "Pre-flight step missing from daily.yml").toBeGreaterThan(0);
+    expect(orchestratorIdx, "'Run orchestrator' step missing from daily.yml").toBeGreaterThan(0);
+    // Ordering is load-bearing: we MUST NOT invoke the orchestrator before
+    // the remote sentinel has been consulted.
+    expect(orchestratorIdx).toBeGreaterThan(preflightIdx);
+    // The step must export SKIP_RUN so index.ts can short-circuit.
+    expect(workflow).toContain("SKIP_RUN=1");
+    // And it must key the probe off today's runDate.
+    expect(workflow).toContain("issues/${RUN_DATE}/.published");
+  });
+
+  it("weekly.yml runs pre-flight BEFORE the digest step and keys on weekly/{weekId}.published", () => {
+    const workflow = readFileSync(
+      path.join(process.cwd(), ".github", "workflows", "weekly.yml"),
+      "utf8",
+    );
+    const preflightIdx = workflow.indexOf("Pre-flight remote sentinel check");
+    const runIdx = workflow.indexOf("Run weekly digest");
+    expect(preflightIdx, "Pre-flight step missing from weekly.yml").toBeGreaterThan(0);
+    expect(runIdx, "'Run weekly digest' step missing from weekly.yml").toBeGreaterThan(0);
+    expect(runIdx).toBeGreaterThan(preflightIdx);
+    expect(workflow).toContain("SKIP_RUN=1");
+    expect(workflow).toContain("weekly/${WEEK_ID}.published");
   });
 });
 

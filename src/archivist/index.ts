@@ -14,15 +14,15 @@
 // (daily.yml). Writing to the filesystem is all the TS code can atomically
 // guarantee.
 //
-// Un-06 LIMITATION (be explicit): if the Buttondown POST succeeds AND the
-// archivist writes all three files AND the workflow's `git push` then fails,
-// the next cron starts from a clean checkout. None of these files exist on
-// the fresh runner, so the backfill scan finds nothing — the orchestrator
-// runs normally and issues a DUPLICATE send to subscribers. E-06 recovery
-// genuinely protects only the in-process partial-write case (files landed
-// on disk, process died before committing). A proper remote-side guard
-// (sentinel pushed separately, or remote-marker precheck) would close that
-// gap; it is not implemented in this revision.
+// Un-06 coverage: if the Buttondown POST succeeds AND the archivist writes
+// all three files AND the workflow's `git push` then fails, the next cron
+// starts from a clean checkout with none of these files. The mitigation is
+// the workflow's `Pre-flight remote sentinel check` step (daily.yml /
+// weekly.yml): it runs `git ls-tree origin/{ref}` against the remote and
+// exports SKIP_RUN=1 when the sentinel is already on origin. That pre-flight
+// PLUS the in-process partial-write recovery handled here give full Un-06
+// coverage: either the sentinel exists on origin (skip) or it doesn't and
+// E-06 backfill re-publishes from items.json on the next run.
 //
 // EARS: U-06 (three-file layout), U-10 (sourceSummary in items.json),
 // C6 (archive path convention), C7 writer side (.published after 2xx only).
