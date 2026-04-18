@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { RawItem } from "../types.js";
 import { RawItemSchema } from "../types.js";
+import { DEFAULT_REDIRECT_CONCURRENCY, mapWithConcurrency } from "./concurrency.js";
 import { resolveRedirects } from "./redirect.js";
 import type { Collector, CollectorContext } from "./types.js";
 
@@ -29,6 +30,7 @@ export interface HnFetchOptions {
   readonly resolveImpl?: typeof resolveRedirects;
   readonly tags?: string;
   readonly hitsPerPage?: number;
+  readonly redirectConcurrency?: number;
 }
 
 export async function fetchHnRaw(
@@ -98,12 +100,11 @@ export class HnCollector implements Collector {
   constructor(private readonly opts: HnFetchOptions = {}) {}
   async fetch(ctx: CollectorContext): Promise<RawItem[]> {
     const resolveImpl = this.opts.resolveImpl ?? resolveRedirects;
+    const concurrency = this.opts.redirectConcurrency ?? DEFAULT_REDIRECT_CONCURRENCY;
     const hits = await fetchHnRaw(ctx, this.opts);
-    const items: RawItem[] = [];
-    for (const hit of hits) {
-      const mapped = await mapHnHitToRawItem(hit, ctx, resolveImpl);
-      if (mapped) items.push(mapped);
-    }
-    return items;
+    const mapped = await mapWithConcurrency(hits, concurrency, (hit) =>
+      mapHnHitToRawItem(hit, ctx, resolveImpl),
+    );
+    return mapped.filter((m): m is RawItem => m !== null);
   }
 }

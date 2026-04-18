@@ -4,7 +4,7 @@ import { GithubTrendingCollector } from "./githubTrending.js";
 import { HnCollector } from "./hn.js";
 import { RedditCollector, pickRedditMode } from "./reddit.js";
 import { RssCollector } from "./rss.js";
-import { TwitterCollector } from "./twitter.js";
+import { TwitterCollector, twitterStubStatus } from "./twitter.js";
 import {
   DEFAULT_COLLECTOR_TIMEOUT_MS,
   CollectorTimeoutError,
@@ -43,12 +43,9 @@ export function defaultCollectors(): Collector[] {
 
 function classifyError(err: unknown): "timeout" | "error" {
   if (err instanceof CollectorTimeoutError) return "timeout";
-  if (
-    err instanceof Error &&
-    (err.name === "AbortError" || /abort/i.test(err.message))
-  ) {
-    return "timeout";
-  }
+  // Only name-based check — message regex could misclassify unrelated errors
+  // (e.g., payment/transaction "aborted" semantics from upstream APIs).
+  if (err instanceof Error && err.name === "AbortError") return "timeout";
   return "error";
 }
 
@@ -70,14 +67,19 @@ export async function fetchAll(
   const results = await Promise.all(
     collectors.map(async (c) => {
       const source = c.source as Source;
-      // O-01 / S-04 skip semantics emerge from collector returning [] when flag off.
-      // Record distinct "skipped" status when the collector itself signals skip.
-      if (source === "twitter" && env.ENABLE_TWITTER !== "1") {
+      // O-01 / S-04 skip semantics. Twitter is always skipped in v1 — the
+      // ENABLE_TWITTER flag only changes the reported reason, not the outcome
+      // (collector is not implemented). Letting the flag through to .fetch()
+      // would raise and surface as a noisy "error" in the summary.
+      if (source === "twitter") {
+        const stub = twitterStubStatus(env);
         return {
           source,
           items: [] as RawItem[],
           status: "skipped" as const,
-          error: "ENABLE_TWITTER not set",
+          error: stub.enabled
+            ? "twitter not implemented in v1"
+            : "ENABLE_TWITTER not set",
         };
       }
       if (source === "reddit") {

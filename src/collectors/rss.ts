@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { XMLParser } from "fast-xml-parser";
 import { z } from "zod";
 import type { RawItem } from "../types.js";
 import { RawItemSchema } from "../types.js";
+import { DEFAULT_REDIRECT_CONCURRENCY, mapWithConcurrency } from "./concurrency.js";
 import { resolveRedirects } from "./redirect.js";
 import type { Collector, CollectorContext } from "./types.js";
 
@@ -130,20 +132,16 @@ export function parseFeedXml(xml: string, feedUrl: string): ParsedFeedEntry[] {
 }
 
 function hashFeedId(feedUrl: string, entryId: string): string {
-  // Simple non-crypto hash; RawItem.id must be stable + filesystem-safe.
-  const combined = `${feedUrl}#${entryId}`;
-  let h = 2166136261;
-  for (let i = 0; i < combined.length; i += 1) {
-    h ^= combined.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return h.toString(16).padStart(8, "0");
+  // sha1 truncated to 16 hex chars: stable, filesystem-safe, collision-resistant
+  // across large feed corpora (FNV-32 had practical collision risk at scale).
+  return createHash("sha1").update(`${feedUrl}#${entryId}`).digest("hex").slice(0, 16);
 }
 
 export interface RssFetchOptions {
   readonly fetchImpl?: typeof fetch;
   readonly resolveImpl?: typeof resolveRedirects;
   readonly feeds?: readonly string[];
+  readonly redirectConcurrency?: number;
 }
 
 async function fetchFeedXml(
@@ -201,22 +199,29 @@ export class RssCollector implements Collector {
     const fetchImpl = this.opts.fetchImpl ?? fetch;
     const resolveImpl = this.opts.resolveImpl ?? resolveRedirects;
     const feeds = this.opts.feeds ?? DEFAULT_FEEDS;
-    const out: RawItem[] = [];
-    for (const feed of feeds) {
-      let xml: string;
-      try {
-        xml = await fetchFeedXml(feed, ctx, fetchImpl);
-      } catch {
-        continue;
-      }
-      const entries = parseFeedXml(xml, feed);
+    const concurrency = this.opts.redirectConcurrency ?? DEFAULT_REDIRECT_CONCURRENCY;
+    // Fetch feeds in parallel; tolerate individual failures.
+    const feedResults = await Promise.all(
+      feeds.map(async (feed) => {
+        try {
+          const xml = await fetchFeedXml(feed, ctx, fetchImpl);
+          return { feed, entries: parseFeedXml(xml, feed) };
+        } catch {
+          return { feed, entries: [] as ParsedFeedEntry[] };
+        }
+      }),
+    );
+    const toMap: Array<{ entry: ParsedFeedEntry; feed: string }> = [];
+    for (const { feed, entries } of feedResults) {
       for (const e of entries) {
         if (e.publishedMs < ctx.cutoffMs) continue;
-        const mapped = await mapRssEntry(e, feed, ctx, resolveImpl);
-        if (mapped) out.push(mapped);
+        toMap.push({ entry: e, feed });
       }
     }
-    return out;
+    const mapped = await mapWithConcurrency(toMap, concurrency, ({ entry, feed }) =>
+      mapRssEntry(entry, feed, ctx, resolveImpl),
+    );
+    return mapped.filter((m): m is RawItem => m !== null);
   }
 }
 

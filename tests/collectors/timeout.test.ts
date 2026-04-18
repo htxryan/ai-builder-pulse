@@ -34,4 +34,21 @@ describe("withTimeout", () => {
     parent.abort(new Error("upstream"));
     await expect(p).rejects.toBeTruthy();
   });
+
+  it("aborts immediately when parent is already aborted at call time", async () => {
+    const parent = new AbortController();
+    parent.abort(new Error("already"));
+    await expect(
+      withTimeout(
+        "hn",
+        60_000,
+        (signal) =>
+          new Promise<number>((_resolve, reject) => {
+            if (signal.aborted) return reject(signal.reason);
+            signal.addEventListener("abort", () => reject(signal.reason));
+          }),
+        parent.signal,
+      ),
+    ).rejects.toThrow(/already/);
+  });
 });

@@ -91,6 +91,18 @@ describe("fetchAll", () => {
     expect(out.summary.reddit!.status).toBe("timeout");
   });
 
+  it("records skipped for twitter when ENABLE_TWITTER=1 (not implemented in v1)", async () => {
+    const out = await fetchAll(mkRunCtx(), {
+      env: { ENABLE_TWITTER: "1" },
+      collectors: [
+        new OkCollector("twitter", [fakeItem("hn", "should-not-appear")]),
+      ],
+    });
+    expect(out.items.length).toBe(0);
+    expect(out.summary.twitter!.status).toBe("skipped");
+    expect(out.summary.twitter!.error).toMatch(/not implemented/i);
+  });
+
   it("records skipped for twitter when ENABLE_TWITTER not set", async () => {
     const out = await fetchAll(mkRunCtx(), {
       env: {},

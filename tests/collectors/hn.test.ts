@@ -83,6 +83,34 @@ describe("HnCollector", () => {
     await expect(c.fetch(makeCtx())).rejects.toThrow(/503/);
   });
 
+  it("resolves redirects in parallel (bounded by concurrency)", async () => {
+    const manyHits = Array.from({ length: 20 }, (_, i) => ({
+      objectID: `obj-${i}`,
+      title: `item ${i}`,
+      url: `https://example.com/${i}`,
+      points: i,
+      num_comments: 0,
+      author: "x",
+      created_at_i: 1_776_500_000 + i,
+    }));
+    const fetchImpl = async () =>
+      new Response(JSON.stringify({ hits: manyHits }), { status: 200 });
+    let concurrent = 0;
+    let peak = 0;
+    const resolveImpl = async (u: string) => {
+      concurrent += 1;
+      peak = Math.max(peak, concurrent);
+      await new Promise((r) => setTimeout(r, 5));
+      concurrent -= 1;
+      return { url: u };
+    };
+    const c = new HnCollector({ fetchImpl, resolveImpl, redirectConcurrency: 6 });
+    const items = await c.fetch(makeCtx());
+    expect(items.length).toBe(20);
+    expect(peak).toBeGreaterThan(1); // ran in parallel
+    expect(peak).toBeLessThanOrEqual(6); // respected limit
+  });
+
   it("records a sourceUrl when the resolver redirects", async () => {
     const fetchImpl = async () =>
       new Response(

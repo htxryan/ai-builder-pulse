@@ -38,8 +38,16 @@ export function parseTrendingHtml(html: string): TrendingRepo[] {
     const description = descEl?.text.trim().replace(/\s+/g, " ") ?? null;
     const languageEl = row.querySelector("[itemprop=programmingLanguage]");
     const language = languageEl?.text.trim() ?? null;
-    const starsAnchor = row.querySelector(`a[href="/${fullName}/stargazers"]`);
-    const stars = parseIntSafe(starsAnchor?.text.trim());
+    // Iterate anchors rather than interpolating fullName into a CSS selector —
+    // unusual (but legal) characters in repo/org names would break selection.
+    let stars = 0;
+    for (const a of row.querySelectorAll("a")) {
+      const h = a.getAttribute("href");
+      if (h && h.endsWith(`/${fullName}/stargazers`)) {
+        stars = parseIntSafe(a.text.trim());
+        break;
+      }
+    }
     let starsToday = 0;
     for (const span of row.querySelectorAll("span.d-inline-block")) {
       const t = span.text;

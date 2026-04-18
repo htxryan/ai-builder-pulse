@@ -70,4 +70,35 @@ describe("resolveRedirects (O-06)", () => {
     const r = await resolveRedirects("https://a.com/x", { fetchImpl });
     expect(r.url).toBe("https://a.com/x");
   });
+
+  it("refuses non-http(s) input without calling fetch", async () => {
+    let called = false;
+    const fetchImpl: typeof fetch = async () => {
+      called = true;
+      return new Response(null, { status: 200 });
+    };
+    const r = await resolveRedirects("ftp://a.com/x", { fetchImpl });
+    expect(r.url).toBe("ftp://a.com/x");
+    expect(called).toBe(false);
+  });
+
+  it("refuses a redirect target pointing at a private/loopback address (SSRF)", async () => {
+    const fetchImpl = mkFetch([
+      { status: 302, location: "http://127.0.0.1/admin" },
+      { status: 200 },
+    ]);
+    const r = await resolveRedirects("https://a.com/start", { fetchImpl });
+    // Hop was refused → resolver stops at the input with no sourceUrl set.
+    expect(r.url).toBe("https://a.com/start");
+    expect(r.sourceUrl).toBeUndefined();
+  });
+
+  it("refuses a redirect target pointing at an RFC1918 address", async () => {
+    const fetchImpl = mkFetch([
+      { status: 302, location: "http://10.0.0.5/internal" },
+      { status: 200 },
+    ]);
+    const r = await resolveRedirects("https://a.com/start", { fetchImpl });
+    expect(r.url).toBe("https://a.com/start");
+  });
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { RawItem } from "../types.js";
 import { RawItemSchema } from "../types.js";
+import { DEFAULT_REDIRECT_CONCURRENCY, mapWithConcurrency } from "./concurrency.js";
 import { resolveRedirects } from "./redirect.js";
 import type { Collector, CollectorContext } from "./types.js";
 
@@ -17,7 +18,7 @@ const USER_AGENT = "ai-builder-pulse/0.1 (by /u/ai-builder-pulse-bot)";
 const RedditPostDataSchema = z.object({
   id: z.string(),
   title: z.string(),
-  url: z.string(),
+  url: z.string().url(),
   permalink: z.string(),
   score: z.number().int(),
   num_comments: z.number().int().nonnegative().default(0),
@@ -55,6 +56,7 @@ export interface RedditFetchOptions {
   readonly resolveImpl?: typeof resolveRedirects;
   readonly subreddits?: readonly string[];
   readonly limit?: number;
+  readonly redirectConcurrency?: number;
 }
 
 async function getOauthToken(
@@ -155,6 +157,7 @@ export class RedditCollector implements Collector {
     const resolveImpl = this.opts.resolveImpl ?? resolveRedirects;
     const subs = this.opts.subreddits ?? DEFAULT_SUBREDDITS;
     const limit = this.opts.limit ?? 25;
+    const concurrency = this.opts.redirectConcurrency ?? DEFAULT_REDIRECT_CONCURRENCY;
     const mode = pickRedditMode(ctx.env);
     if (mode === "skip") return [];
 
@@ -163,20 +166,25 @@ export class RedditCollector implements Collector {
       token = await getOauthToken(ctx, fetchImpl);
     }
 
-    const out: RawItem[] = [];
-    for (const sub of subs) {
-      let posts: RedditPost[];
-      try {
-        posts = await fetchSubredditListing(sub, ctx, mode, fetchImpl, limit, token);
-      } catch {
-        continue;
-      }
-      for (const p of posts) {
+    const listings = await Promise.all(
+      subs.map(async (sub) => {
+        try {
+          return await fetchSubredditListing(sub, ctx, mode, fetchImpl, limit, token);
+        } catch {
+          return [] as RedditPost[];
+        }
+      }),
+    );
+    const fresh: RedditPost[] = [];
+    for (const listing of listings) {
+      for (const p of listing) {
         if (p.created_utc * 1000 < ctx.cutoffMs) continue;
-        const mapped = await mapRedditPost(p, ctx, resolveImpl);
-        if (mapped) out.push(mapped);
+        fresh.push(p);
       }
     }
-    return out;
+    const mapped = await mapWithConcurrency(fresh, concurrency, (p) =>
+      mapRedditPost(p, ctx, resolveImpl),
+    );
+    return mapped.filter((m): m is RawItem => m !== null);
   }
 }

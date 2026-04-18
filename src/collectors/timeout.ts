@@ -15,7 +15,11 @@ export async function withTimeout<T>(
 ): Promise<T> {
   const ac = new AbortController();
   const onParentAbort = (): void => ac.abort(parent?.reason);
-  parent?.addEventListener("abort", onParentAbort, { once: true });
+  if (parent?.aborted) {
+    ac.abort(parent.reason);
+  } else {
+    parent?.addEventListener("abort", onParentAbort, { once: true });
+  }
   const timer = setTimeout(() => {
     ac.abort(new CollectorTimeoutError(source, ms));
   }, ms);
