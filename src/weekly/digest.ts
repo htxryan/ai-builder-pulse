@@ -9,6 +9,7 @@ import {
   type ScoredItem,
   ScoredItemSchema,
 } from "../types.js";
+import { sourceBadge } from "../renderer/sourceBadge.js";
 import { z } from "zod";
 
 // Minimal shape we care about from `issues/YYYY-MM-DD/items.json`. We keep
@@ -25,6 +26,7 @@ export interface WeeklyDigestInput {
   readonly availableDays: readonly ArchivedDay[];
   readonly missingDays: readonly string[]; // YYYY-MM-DD of days with no items.json
   readonly topN?: number; // default 12 — total items that appear in the digest
+  readonly topPerCategory?: number; // default 3 — cap items shown per category
 }
 
 export interface WeeklyDigest {
@@ -60,6 +62,29 @@ export function priorSevenDays(endDate: string): string[] {
     const t = new Date(base.getTime() - i * 86_400_000);
     out.push(t.toISOString().slice(0, 10));
   }
+  return out;
+}
+
+// Count distinct days each item id appeared on (keep:true only). Same id
+// across multiple archive days = "trending this week" signal. Items
+// appearing on 2+ days get a visual badge in the rendered digest.
+function buildDayAppearance(
+  days: readonly ArchivedDay[],
+): Map<string, number> {
+  const seen = new Map<string, Set<string>>();
+  for (const day of days) {
+    for (const it of day.items) {
+      if (!it.keep) continue;
+      let set = seen.get(it.id);
+      if (!set) {
+        set = new Set<string>();
+        seen.set(it.id, set);
+      }
+      set.add(day.runDate);
+    }
+  }
+  const out = new Map<string, number>();
+  for (const [id, set] of seen.entries()) out.set(id, set.size);
   return out;
 }
 
@@ -103,9 +128,15 @@ function escapeLinkUrl(url: string): string {
   return url.replace(/\)/g, "%29");
 }
 
-function renderItem(item: ScoredItem): string {
+function renderItem(
+  item: ScoredItem,
+  appearedOnDays: number,
+): string {
   const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})`;
-  return `${header}\n\n${item.description}\n`;
+  const trendingSuffix =
+    appearedOnDays >= 2 ? ` · trending this week (${appearedOnDays} days)` : "";
+  const meta = `*${sourceBadge(item)}${trendingSuffix}*`;
+  return `${header}\n${meta}\n\n${item.description}\n`;
 }
 
 function groupByCategory(items: readonly ScoredItem[]): Map<Category, ScoredItem[]> {
@@ -120,16 +151,34 @@ function groupByCategory(items: readonly ScoredItem[]): Map<Category, ScoredItem
 
 export function buildWeeklyDigest(input: WeeklyDigestInput): WeeklyDigest {
   const topN = input.topN ?? 12;
-  const selected = selectTop(input.availableDays, topN);
+  const topPerCategory = input.topPerCategory ?? 3;
+  const dayAppearance = buildDayAppearance(input.availableDays);
   const subject = `AI Builder Pulse Weekly — ${input.weekId}`;
+
+  // Select top-N overall, then apply per-category cap. We re-flatten post-cap
+  // so `selected` (and `itemCount`) reflects what subscribers actually see —
+  // otherwise the intro's "N items" would over-count what gets rendered.
+  const selectedPool = selectTop(input.availableDays, topN);
+  const perCategoryGroups = groupByCategory(selectedPool);
+  const selected: ScoredItem[] = [];
+  for (const category of CATEGORIES) {
+    const bucket = perCategoryGroups.get(category) ?? [];
+    for (const it of bucket.slice(0, topPerCategory)) selected.push(it);
+  }
 
   const sections: string[] = [];
   sections.push(`# AI Builder Pulse Weekly — ${input.weekId}`);
   sections.push("");
 
   const daysCovered = input.availableDays.length;
+  const totalWindow = daysCovered + input.missingDays.length;
+  // Day-coverage breadcrumb: "7 of 7 days" when complete, or the ratio when
+  // the rollup is partial. We always show the ratio so subscribers can tell
+  // at a glance whether the week was fully captured.
+  const coverage =
+    totalWindow > 0 ? `${daysCovered} of ${totalWindow} days` : `${daysCovered} days`;
   sections.push(
-    `Best of the last ${daysCovered} day${daysCovered === 1 ? "" : "s"}: ${selected.length} item${selected.length === 1 ? "" : "s"} re-ranked by relevance across the week.`,
+    `Best of the week (${coverage}): ${selected.length} item${selected.length === 1 ? "" : "s"} re-ranked by relevance.`,
   );
   sections.push("");
 
@@ -146,13 +195,18 @@ export function buildWeeklyDigest(input: WeeklyDigestInput): WeeklyDigest {
     sections.push("_No items met the relevance threshold this week._");
     sections.push("");
   } else {
-    const groups = groupByCategory(selected);
     for (const category of CATEGORIES) {
-      const bucket = groups.get(category) ?? [];
+      const bucket = perCategoryGroups.get(category) ?? [];
       if (bucket.length === 0) continue;
+      const capped = bucket.slice(0, topPerCategory);
       sections.push(`## ${category}`);
       sections.push("");
-      sections.push(bucket.map(renderItem).join("\n").replace(/\n+$/, ""));
+      sections.push(
+        capped
+          .map((it) => renderItem(it, dayAppearance.get(it.id) ?? 1))
+          .join("\n")
+          .replace(/\n+$/, ""),
+      );
       sections.push("");
     }
   }

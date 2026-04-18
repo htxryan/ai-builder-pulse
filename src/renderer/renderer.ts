@@ -7,6 +7,16 @@
 //   - Within each category: relevanceScore DESC, then id ASC for stability
 //   - Empty categories are omitted
 //
+// Craft layer:
+//   - Intro line names a top pick (first ~100 chars become Gmail preview).
+//   - If the highest-relevance kept item scores ≥ TOP_PICK_THRESHOLD, a
+//     `## Today's Top Pick` block is rendered above category sections. The
+//     item still appears in its category below.
+//   - With ≥ TOC_MIN_ITEMS kept items, a compact category TOC is emitted
+//     after the intro.
+//   - Each item carries a metadata-aware source badge (e.g.
+//     `*Hacker News · 234 points*`).
+//
 // The body includes template URLs (newsletter home, archive, unsubscribe) that
 // are governed by the Renderer-owned allowlist in allowlist.ts. Pass those
 // patterns to `verifyLinkIntegrity(scored, raw, patterns)` so Un-01 treats
@@ -17,6 +27,7 @@ import {
   NEWSLETTER_ARCHIVE_URL,
   NEWSLETTER_HOME_URL,
 } from "./allowlist.js";
+import { sourceBadge } from "./sourceBadge.js";
 
 export interface RenderedIssue {
   readonly subject: string;
@@ -24,6 +35,8 @@ export interface RenderedIssue {
 }
 
 const SUBJECT_PREFIX = "AI Builder Pulse";
+const TOP_PICK_THRESHOLD = 0.85;
+const TOC_MIN_ITEMS = 10;
 
 function sortWithinCategory(a: ScoredItem, b: ScoredItem): number {
   if (a.relevanceScore !== b.relevanceScore) {
@@ -43,23 +56,6 @@ function groupByCategory(items: readonly ScoredItem[]): Map<Category, ScoredItem
   return groups;
 }
 
-function sourceLabel(item: ScoredItem): string {
-  switch (item.source) {
-    case "hn":
-      return "Hacker News";
-    case "github-trending":
-      return "GitHub Trending";
-    case "reddit":
-      return "Reddit";
-    case "rss":
-      return "RSS";
-    case "twitter":
-      return "Twitter";
-    case "mock":
-      return "Mock";
-  }
-}
-
 // Titles from HN/Reddit/RSS frequently contain `[` and `]` (e.g. `"[PDF] Foo"`,
 // `"React [beta]"`). Inside a markdown link label, an unescaped `]` terminates
 // the label early and the trailing text becomes orphaned/garbled. Escape both
@@ -75,9 +71,24 @@ function escapeLinkUrl(url: string): string {
   return url.replace(/\)/g, "%29");
 }
 
+// GitHub-flavored-markdown style slug: lowercase, drop non-alphanum except
+// spaces/hyphens, collapse spaces to hyphens. `&` vanishes, producing the
+// familiar `tools--launches` double-hyphen seen in GFM. Kept here (not a
+// shared util) because the only anchor target the renderer cares about is a
+// category name — no reason to generalize.
+function slugifyCategory(category: string): string {
+  // Order matters: replace spaces with hyphens FIRST, then strip other
+  // punctuation. This preserves the GFM `tools--launches` double-hyphen you
+  // get when an `&` (surrounded by spaces) is dropped.
+  return category
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\w-]/g, "");
+}
+
 function renderItem(item: ScoredItem): string {
   const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})`;
-  const meta = `*${sourceLabel(item)}*`;
+  const meta = `*${sourceBadge(item)}*`;
   return `${header}\n${meta}\n\n${item.description}\n`;
 }
 
@@ -91,6 +102,44 @@ function renderCategorySection(
   // markdown clients).
   const rendered = items.map(renderItem).join("\n").replace(/\n+$/, "");
   return `## ${category}\n\n${rendered}`;
+}
+
+function renderIntro(
+  kept: readonly ScoredItem[],
+  topPick: ScoredItem | null,
+  categoryCount: number,
+): string {
+  if (kept.length === 0) {
+    return "Today: no items met the relevance bar.";
+  }
+  const stories = `${kept.length} stor${kept.length === 1 ? "y" : "ies"}`;
+  const cats = `${categoryCount} categor${categoryCount === 1 ? "y" : "ies"}`;
+  const base = `Today: ${stories} across ${cats}`;
+  if (topPick) {
+    // Strip brackets from the quoted title so Gmail's preview doesn't show
+    // raw markdown escapes. The H3 rendering below still escapes for link
+    // safety; this is preview-only text.
+    const cleanTitle = topPick.title.replace(/[\[\]]/g, "");
+    return `${base} — top pick, "${cleanTitle}", from ${sourceBadge(topPick)}.`;
+  }
+  return `${base}.`;
+}
+
+function renderTOC(groups: ReadonlyMap<Category, ScoredItem[]>): string {
+  const lines: string[] = ["**In this issue:**", ""];
+  for (const category of CATEGORIES) {
+    const bucket = groups.get(category) ?? [];
+    if (bucket.length === 0) continue;
+    const slug = slugifyCategory(category);
+    lines.push(`- [${category} (${bucket.length})](#${slug})`);
+  }
+  return lines.join("\n");
+}
+
+function renderTopPick(item: ScoredItem): string {
+  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})`;
+  const meta = `*${sourceBadge(item)}*`;
+  return `## Today's Top Pick\n\n${header}\n${meta}\n\n${item.description}`;
 }
 
 function renderFooter(): string {
@@ -107,20 +156,41 @@ function renderFooter(): string {
   ].join("\n");
 }
 
+function pickTopItem(kept: readonly ScoredItem[]): ScoredItem | null {
+  if (kept.length === 0) return null;
+  // Use the same ordering as within-category so the choice is stable.
+  const sorted = [...kept].sort(sortWithinCategory);
+  const candidate = sorted[0];
+  if (!candidate) return null;
+  return candidate.relevanceScore >= TOP_PICK_THRESHOLD ? candidate : null;
+}
+
 export function renderIssue(
   runDate: string,
   kept: readonly ScoredItem[],
 ): RenderedIssue {
   const subject = `${SUBJECT_PREFIX} — ${runDate}`;
   const groups = groupByCategory(kept);
+  const nonEmptyCategories = CATEGORIES.filter(
+    (c) => (groups.get(c)?.length ?? 0) > 0,
+  );
+  const topPick = pickTopItem(kept);
 
   const sections: string[] = [];
   sections.push(`# ${SUBJECT_PREFIX} — ${runDate}`);
   sections.push("");
-  sections.push(
-    `Today's briefing: ${kept.length} item${kept.length === 1 ? "" : "s"} curated for AI builders.`,
-  );
+  sections.push(renderIntro(kept, topPick, nonEmptyCategories.length));
   sections.push("");
+
+  if (kept.length >= TOC_MIN_ITEMS) {
+    sections.push(renderTOC(groups));
+    sections.push("");
+  }
+
+  if (topPick) {
+    sections.push(renderTopPick(topPick));
+    sections.push("");
+  }
 
   for (const category of CATEGORIES) {
     const bucket = groups.get(category) ?? [];

@@ -4,7 +4,14 @@ exports[`renderIssue (C5) > golden-file: deterministic snapshot for fixture inpu
 {
   "body": "# AI Builder Pulse — 2026-04-18
 
-Today's briefing: 2 items curated for AI builders.
+Today: 2 stories across 2 categories — top pick, "Tool One", from Hacker News.
+
+## Today's Top Pick
+
+### [Tool One](https://example.com/tool1)
+*Hacker News*
+
+Short description of the first tool.
 
 ## Tools & Launches
 

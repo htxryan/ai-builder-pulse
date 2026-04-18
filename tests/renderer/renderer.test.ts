@@ -55,10 +55,10 @@ describe("renderIssue (C5)", () => {
     expect(r.subject.length).toBeLessThanOrEqual(80);
   });
 
-  it("renders H1 title, item count, category headings, footer", () => {
+  it("renders H1 title, story count intro, category headings, footer", () => {
     const r = renderIssue("2026-04-18", [makeScored("a")]);
     expect(r.body).toContain("# AI Builder Pulse — 2026-04-18");
-    expect(r.body).toContain("1 item curated");
+    expect(r.body).toContain("Today: 1 story across 1 category");
     expect(r.body).toContain("## Tools & Launches");
     expect(r.body).toContain("### [Title a](https://example.com/a)");
     expect(r.body).toContain(NEWSLETTER_HOME_URL);
@@ -66,12 +66,12 @@ describe("renderIssue (C5)", () => {
     expect(r.body).toContain("{{unsubscribe_url}}");
   });
 
-  it("pluralizes item count correctly", () => {
+  it("pluralizes story and category counts correctly", () => {
     const r = renderIssue("2026-04-18", [
-      makeScored("a"),
-      makeScored("b"),
+      makeScored("a", { category: "Tools & Launches" }),
+      makeScored("b", { category: "Model Releases" }),
     ]);
-    expect(r.body).toContain("2 items curated");
+    expect(r.body).toContain("Today: 2 stories across 2 categories");
   });
 
   it("groups by category in declared order (U-05)", () => {
@@ -115,7 +115,7 @@ describe("renderIssue (C5)", () => {
   it("handles zero items (renders header + footer only)", () => {
     // S-02 prevents this reaching production, but renderer must be total.
     const r = renderIssue("2026-04-18", []);
-    expect(r.body).toContain("0 items curated");
+    expect(r.body).toContain("no items met the relevance bar");
     expect(r.body).toContain(NEWSLETTER_HOME_URL);
   });
 

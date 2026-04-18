@@ -132,6 +132,8 @@ describe("buildWeeklyDigest", () => {
     });
     expect(digest.body).toContain("2 days missing");
     expect(digest.body).toContain("2026-04-12");
+    // Day-coverage breadcrumb: 1 available of 3 total in window.
+    expect(digest.body).toContain("1 of 3 days");
   });
 
   it("handles zero selected items gracefully", () => {
