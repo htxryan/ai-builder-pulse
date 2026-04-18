@@ -48,7 +48,8 @@ function statusEmoji(status: string): string {
   if (
     status === "empty_skip" ||
     status === "source_floor_skip" ||
-    status === "no_days_available"
+    status === "no_days_available" ||
+    status === "insufficient_days"
   )
     return "⏸️";
   if (status === "published_archive_failed" || status === "published_sentinel_failed")

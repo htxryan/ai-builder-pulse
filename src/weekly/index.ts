@@ -36,8 +36,34 @@ export type WeeklyStatus =
   | "published_sentinel_failed"
   | "dry_run"
   | "no_days_available"
+  // Fewer archive days exist on disk than MIN_DAYS_FOR_WEEKLY. Distinct
+  // from `no_days_available` so operators can tell "nothing ran" from
+  // "some ran but rollup refuses to publish a stunted digest".
+  | "insufficient_days"
   | "idempotent_skip"
   | "failed";
+
+const DEFAULT_MIN_DAYS_FOR_WEEKLY = 7;
+
+/**
+ * Parse MIN_DAYS_FOR_WEEKLY from env. Clamped to [1, 7] — values outside
+ * that window have no meaningful interpretation for a 7-day rollup.
+ * Non-numeric or out-of-range values fall back to the default and log at
+ * warn so a typo in the workflow doesn't silently disable the guard.
+ */
+function parseMinDaysForWeekly(env: NodeJS.ProcessEnv): number {
+  const raw = env.MIN_DAYS_FOR_WEEKLY;
+  if (raw === undefined || raw === "") return DEFAULT_MIN_DAYS_FOR_WEEKLY;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 7) {
+    log.warn("MIN_DAYS_FOR_WEEKLY invalid; using default", {
+      raw,
+      defaultValue: DEFAULT_MIN_DAYS_FOR_WEEKLY,
+    });
+    return DEFAULT_MIN_DAYS_FOR_WEEKLY;
+  }
+  return n;
+}
 
 export interface WeeklyStageTimings {
   readonly loadDays?: number;
@@ -230,6 +256,30 @@ export async function runWeeklyDigest(
         corruptDays.length > 0
           ? "all_days_corrupt_or_missing"
           : "no_items_json_in_window",
+    });
+  }
+
+  // Minimum-days guard: refuse to publish a stunted digest on the first
+  // Monday after a fresh deployment. Runs BEFORE digest build / sentinel
+  // write so a re-dispatch once the archive has filled in will proceed
+  // normally. Treated as a skip (not a failure): the workflow exits 0.
+  const minDays = parseMinDaysForWeekly(env);
+  if (availableDays.length < minDays) {
+    log.warn("weekly: insufficient archive days; skipping publish", {
+      weekId,
+      availableDays: availableDays.length,
+      minDays,
+      window,
+      missingDays,
+      corruptDays,
+    });
+    return finish({
+      weekId,
+      status: "insufficient_days",
+      availableDays: availableDays.map((d) => d.runDate),
+      missingDays,
+      corruptDays,
+      reason: `have ${availableDays.length} day(s), need ${minDays}`,
     });
   }
 

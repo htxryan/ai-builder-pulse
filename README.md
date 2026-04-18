@@ -48,6 +48,7 @@ in `.env.example`.
 | `BUTTONDOWN_API_KEY` | Buttondown publish key. |
 | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | Reddit OAuth. |
 | `ARCHIVES_FALLBACK` | `1` = when the pipeline would otherwise silence a day (S-02 empty or S-05 source-floor skip), re-publish the most recent prior archive with a "From the archives" banner. Off by default — see silence SLA below. |
+| `MIN_DAYS_FOR_WEEKLY` | Minimum archive days (of the last 7) required before the weekly rollup will publish. Default `7`. Clamped to `[1, 7]`; invalid values fall back to the default with a `::warning::`. If fewer days exist on disk (e.g. first Monday after fresh deployment), the weekly exits `insufficient_days`, logs the decision, and returns a 0 exit code (not a failure). Set lower to allow partial rollups. |
 | `DEBUG` | `1` = emit `debug`-level log lines. Off by default. |
 
 ## Silence SLA

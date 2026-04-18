@@ -10,9 +10,24 @@ on:
         required: false
         default: "0"
 
+# cancel-in-progress: true is safe here because the remote .published sentinel
+# (written atomically by the orchestrator on a successful Buttondown 2xx and
+# committed in the same run) is the authoritative de-dup key. If a 06:07 cron
+# run is cancelled mid-flight by an operator's workflow_dispatch rerun:
+#   • pre-publish cancel  → no email sent; replacement run publishes cleanly.
+#   • post-publish cancel before commit → sentinel not committed; replacement
+#     run's pre-flight `git ls-tree origin/...` would not see it and would
+#     re-publish. This is the known Un-06 DIVERGENCE case the workflow already
+#     surfaces with ::error:: on push-failure; operator-triggered cancellation
+#     carries the same responsibility (don't cancel after the orchestrator
+#     logs "publish ok" unless you're prepared to delete the Buttondown draft).
+#   • post-push                → sentinel is on origin; replacement short-circuits.
+# The prior `cancel-in-progress: false` allowed a 06:07 cron and a manual
+# workflow_dispatch to run concurrently and race on the sentinel commit +
+# push. Cancelling the older run eliminates the race.
 concurrency:
   group: daily-publish
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -23,10 +38,6 @@ jobs:
     timeout-minutes: 15
     env:
       DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
-      REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
-      REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,8 +77,18 @@ jobs:
           else
             echo "no remote sentinel for ${RUN_DATE} — proceeding"
           fi
+      # Publish secrets are scoped to this step only. Defence-in-depth: the
+      # checkout, install, lint, test, and commit steps must never see the
+      # Claude/Buttondown/Reddit keys, so a compromised dependency invoked
+      # during `pnpm install` or `pnpm test` cannot exfiltrate them via
+      # process.env. Job-level `env:` would expose them to every step.
       - name: Run orchestrator
         id: orchestrator
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: pnpm start
       # E6: commit issues/{runDate}/ artifacts locally. If nothing was
       # written (DRY_RUN, skip statuses), the step records that and exits 0.
@@ -117,8 +138,8 @@ jobs:
           # Rebase onto remote to absorb any commits that landed between
           # checkout and now (rare on a single-writer cron branch, but cheap
           # insurance). Autostash preserves the just-made archive commit.
-          git pull --rebase --autostash origin ${GITHUB_REF_NAME}
-          if ! git push origin HEAD:${GITHUB_REF_NAME}; then
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          if ! git push origin "HEAD:${GITHUB_REF_NAME}"; then
             echo "::error::Un-06 DIVERGENCE — Buttondown publish succeeded but git push failed. The archive commit is stranded on this runner. Next run's remote sentinel pre-flight will NOT see this sentinel and would attempt to re-publish. Operator MUST investigate before the next cron fires: either retry the push, or delete the corresponding Buttondown issue and let the next run re-send cleanly."
             exit 1
           fi

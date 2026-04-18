@@ -72,7 +72,7 @@ describe("runWeeklyDigest", () => {
     const r = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: { DRY_RUN: "1" },
+      env: { DRY_RUN: "1", MIN_DAYS_FOR_WEEKLY: "1" },
       publisher: {
         publish: async () => {
           publishCalls++;
@@ -102,7 +102,7 @@ describe("runWeeklyDigest", () => {
     const r = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: {},
+      env: { MIN_DAYS_FOR_WEEKLY: "1" },
       publisher,
     });
     expect(r.status).toBe("published");
@@ -116,7 +116,7 @@ describe("runWeeklyDigest", () => {
     const r = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: {},
+      env: { MIN_DAYS_FOR_WEEKLY: "1" },
       publisher: {
         publish: async () => ({ id: "em_x", attempts: 1 }),
       },
@@ -133,7 +133,7 @@ describe("runWeeklyDigest", () => {
     const r = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: {},
+      env: { MIN_DAYS_FOR_WEEKLY: "1" },
       publisher: {
         publish: async () => {
           throw new Error("boom");
@@ -158,7 +158,7 @@ describe("runWeeklyDigest", () => {
     const first = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: {},
+      env: { MIN_DAYS_FOR_WEEKLY: "1" },
       publisher,
     });
     expect(first.status).toBe("published");
@@ -170,7 +170,7 @@ describe("runWeeklyDigest", () => {
     const second = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: {},
+      env: { MIN_DAYS_FOR_WEEKLY: "1" },
       publisher,
     });
     expect(second.status).toBe("idempotent_skip");
@@ -190,6 +190,68 @@ describe("runWeeklyDigest", () => {
     expect(r.digestPath).toBeUndefined();
   });
 
+  it("skips publish with insufficient_days when days < MIN_DAYS_FOR_WEEKLY", async () => {
+    // 3 days present, default MIN_DAYS=7 → guard trips.
+    seedDay(root, "2026-04-16", [mkItem("a", 0.9)]);
+    seedDay(root, "2026-04-17", [mkItem("b", 0.8)]);
+    seedDay(root, "2026-04-18", [mkItem("c", 0.7)]);
+    let published = false;
+    const r = await runWeeklyDigest({
+      now: fixedNow,
+      repoRoot: root,
+      env: {}, // no MIN_DAYS_FOR_WEEKLY override → default 7
+      publisher: {
+        publish: async () => {
+          published = true;
+          return { id: "x", attempts: 1 };
+        },
+      },
+    });
+    expect(r.status).toBe("insufficient_days");
+    expect(published).toBe(false);
+    expect(r.availableDays).toHaveLength(3);
+    expect(r.reason).toContain("3");
+    expect(r.reason).toContain("7");
+    // Digest file must NOT be written — the guard short-circuits before build.
+    expect(r.digestPath).toBeUndefined();
+    // Sentinel must NOT be written — a re-dispatch once the archive fills
+    // in should proceed normally.
+    expect(existsSync(weeklySentinelPath(root, r.weekId))).toBe(false);
+  });
+
+  it("MIN_DAYS_FOR_WEEKLY override lets partial archive publish", async () => {
+    seedDay(root, "2026-04-17", [mkItem("a", 0.9)]);
+    seedDay(root, "2026-04-18", [mkItem("b", 0.8)]);
+    const r = await runWeeklyDigest({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_DAYS_FOR_WEEKLY: "2" },
+      publisher: { publish: async () => ({ id: "em_x", attempts: 1 }) },
+    });
+    expect(r.status).toBe("published");
+  });
+
+  it("invalid MIN_DAYS_FOR_WEEKLY falls back to default", async () => {
+    // 6 days seeded. "999" is invalid → clamped to default 7 → insufficient.
+    for (const d of [
+      "2026-04-13",
+      "2026-04-14",
+      "2026-04-15",
+      "2026-04-16",
+      "2026-04-17",
+      "2026-04-18",
+    ]) {
+      seedDay(root, d, [mkItem(`i-${d}`, 0.5)]);
+    }
+    const r = await runWeeklyDigest({
+      now: fixedNow,
+      repoRoot: root,
+      env: { MIN_DAYS_FOR_WEEKLY: "999" },
+      publisher: { publish: async () => ({ id: "x", attempts: 1 }) },
+    });
+    expect(r.status).toBe("insufficient_days");
+  });
+
   it("tolerates corrupt items.json (skips the day, continues)", async () => {
     seedDay(root, "2026-04-17", [mkItem("a", 0.9)]);
     // Corrupt 2026-04-18 manually
@@ -200,7 +262,7 @@ describe("runWeeklyDigest", () => {
     const r = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: {},
+      env: { MIN_DAYS_FOR_WEEKLY: "1" },
       publisher: {
         publish: async () => {
           published = true;

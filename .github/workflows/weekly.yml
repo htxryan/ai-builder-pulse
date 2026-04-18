@@ -10,9 +10,14 @@ on:
         required: false
         default: "0"
 
+# cancel-in-progress: true — symmetric with daily.yml. The weekly sentinel
+# `weekly/{weekId}.published` is the atomic de-dup; see the rationale on
+# daily.yml for the cancel-timing edge cases. A manual workflow_dispatch
+# during an in-flight scheduled run cancels the older run instead of racing
+# it on commit + push.
 concurrency:
   group: weekly-digest
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -24,10 +29,11 @@ jobs:
     env:
       MODE: weekly
       DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
-      # No ANTHROPIC_API_KEY: the weekly runner never calls Claude — it
-      # reads existing items.json files and re-ranks by stored relevance.
-      # Keeping the surface narrow reduces supply-chain blast radius.
-      BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
+      # Minimum archive days required before the rollup will publish. If
+      # fewer days exist on disk (e.g. first Monday of deployment after only
+      # 3 daily runs), the weekly skips publish, logs the decision, and
+      # exits 0. Operators can override per-run via workflow_dispatch env.
+      MIN_DAYS_FOR_WEEKLY: "7"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,7 +66,12 @@ jobs:
           else
             echo "no remote sentinel for ${WEEK_ID} — proceeding"
           fi
+      # Publish secret scoped to this step only (defence-in-depth; see
+      # daily.yml for rationale). The weekly runner never calls Claude, so
+      # ANTHROPIC_API_KEY stays absent entirely.
       - name: Run weekly digest
+        env:
+          BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
         run: pnpm start
       - name: Commit weekly digest
         id: commit
@@ -93,8 +104,8 @@ jobs:
         if: ${{ steps.commit.outputs.committed == 'true' }}
         run: |
           set -euo pipefail
-          git pull --rebase --autostash origin ${GITHUB_REF_NAME}
-          if ! git push origin HEAD:${GITHUB_REF_NAME}; then
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+          if ! git push origin "HEAD:${GITHUB_REF_NAME}"; then
             echo "::error::Weekly DIVERGENCE — Buttondown publish succeeded but git push failed. The weekly sentinel (weekly/{weekId}.published) is stranded on this runner; a manual re-dispatch of this workflow would re-publish. Operator must investigate before re-dispatch (retry push from local, or pause the workflow)."
             exit 1
           fi
