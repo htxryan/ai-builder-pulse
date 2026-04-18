@@ -47,6 +47,7 @@ export interface OrchestratorResult {
   runDate: string;
   status:
     | "published"
+    | "published_archive_failed"
     | "dry_run"
     | "idempotent_skip"
     | "empty_skip"
@@ -357,9 +358,13 @@ export async function runOrchestrator(
   });
 
   // E6 Archivist: write issue.md + items.json + .published atomically AFTER
-  // the Buttondown POST succeeds (C7 contract). A failure here is non-fatal
-  // to the run's exit code — the email already went out — but we log loudly
-  // (::error::) so the next run's E-06 backfill scan picks it up (Un-06).
+  // the Buttondown POST succeeds (C7 contract). A failure here means the
+  // email has already gone out but the archive is incomplete. We escalate
+  // via a distinct status (`published_archive_failed`) so the workflow can
+  // fail loudly (non-zero exit) rather than silently skipping the commit —
+  // the partial-archive case is exactly what E-06 backfill detection
+  // covers (issue.md present, .published missing) on the NEXT cron run.
+  let archiveOk = true;
   try {
     archiveRun({
       runDate,
@@ -371,7 +376,8 @@ export async function runOrchestrator(
       publishedAt: new Date().toISOString(),
     });
   } catch (err) {
-    log.error("archivist write failed (publish already succeeded — Un-06 divergence)", {
+    archiveOk = false;
+    log.error("archivist write failed (publish already succeeded)", {
       runDate,
       publishId: publishResult.id,
       error: err instanceof Error ? err.message : String(err),
@@ -380,7 +386,7 @@ export async function runOrchestrator(
 
   return {
     runDate,
-    status: "published",
+    status: archiveOk ? "published" : "published_archive_failed",
     scored,
     summary: filteredSummary,
     rendered,

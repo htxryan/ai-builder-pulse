@@ -5,24 +5,33 @@
 //   items.json   — structured record of the run (kept items + sourceSummary)
 //   .published   — C7 sentinel; presence alone signals "this runDate is done"
 //
-// Order matters for Un-06 recoverability: issue.md and items.json are written
-// FIRST (so a failure after POST but before sentinel still leaves E-06
-// detectable artifacts — see backfill.ts: "issue.md exists, .published does
-// not → backfill candidate"). `.published` goes last and holds the publishId.
+// Order matters for partial-failure detectability: issue.md and items.json
+// are written FIRST. If this process dies between issue.md and .published
+// (e.g. disk full after two writes), the next run's E-06 backfill scan
+// (backfill.ts) observes "issue.md exists, .published does not" and flags it.
 //
 // This module does NOT invoke git — commit + push is the workflow's job
 // (daily.yml). Writing to the filesystem is all the TS code can atomically
-// guarantee; the workflow's gitleaks step and `git push` then carry the
-// commit over the line. If that step fails after Buttondown 2xx, the next
-// cron run's E-06 backfill scan (src/backfill.ts) picks it up.
+// guarantee.
+//
+// Un-06 LIMITATION (be explicit): if the Buttondown POST succeeds AND the
+// archivist writes all three files AND the workflow's `git push` then fails,
+// the next cron starts from a clean checkout. None of these files exist on
+// the fresh runner, so the backfill scan finds nothing — the orchestrator
+// runs normally and issues a DUPLICATE send to subscribers. E-06 recovery
+// genuinely protects only the in-process partial-write case (files landed
+// on disk, process died before committing). A proper remote-side guard
+// (sentinel pushed separately, or remote-marker precheck) would close that
+// gap; it is not implemented in this revision.
 //
 // EARS: U-06 (three-file layout), U-10 (sourceSummary in items.json),
 // C6 (archive path convention), C7 writer side (.published after 2xx only).
 
-import { mkdirSync, renameSync, writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { RenderedIssue } from "../renderer/renderer.js";
 import type { ScoredItem, SourceSummary } from "../types.js";
+import { writeFileAtomic } from "../fsAtomic.js";
 
 export interface ArchiveInput {
   readonly runDate: string;
@@ -72,33 +81,11 @@ interface ItemsJsonPayload {
   readonly items: readonly ScoredItem[];
 }
 
-// Write a file by dumping to a sibling `.tmp` then rename. Same-filesystem
-// rename is atomic on POSIX, so a crash mid-write never leaves a partial
-// committed file.
-function writeAtomic(dest: string, contents: string): void {
-  const tmp = `${dest}.tmp`;
-  writeFileSync(tmp, contents);
-  renameSync(tmp, dest);
-}
-
-// Guard the sentinel write: if something goes wrong we do NOT want a partial
-// `.published` hanging around (it would short-circuit E-06). Remove the tmp
-// if rename failed.
+// Sentinel write uses the shared atomic helper (cleans up `.tmp` on
+// failure). We do NOT want a partial `.published` hanging around — it
+// would short-circuit E-06 detection.
 function writeSentinelAtomic(dest: string, publishId: string): void {
-  const tmp = `${dest}.tmp`;
-  try {
-    writeFileSync(tmp, `${publishId}\n`);
-    renameSync(tmp, dest);
-  } catch (err) {
-    if (existsSync(tmp)) {
-      try {
-        unlinkSync(tmp);
-      } catch {
-        // swallow — we're already on the error path
-      }
-    }
-    throw err;
-  }
+  writeFileAtomic(dest, `${publishId}\n`);
 }
 
 export function archiveRun(input: ArchiveInput): ArchiveResult {
@@ -122,8 +109,8 @@ export function archiveRun(input: ArchiveInput): ArchiveResult {
   // Order: body first, structured record second, sentinel LAST. If this
   // process dies between issue.md and .published, the next run's E-06 scan
   // (backfill) will still see the orphaned issue.md and flag it.
-  writeAtomic(issueMd, input.rendered.body);
-  writeAtomic(itemsJson, `${JSON.stringify(payload, null, 2)}\n`);
+  writeFileAtomic(issueMd, input.rendered.body);
+  writeFileAtomic(itemsJson, `${JSON.stringify(payload, null, 2)}\n`);
   writeSentinelAtomic(sentinel, input.publishId);
 
   return {

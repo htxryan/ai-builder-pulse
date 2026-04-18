@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { runWeeklyDigest } from "../../src/weekly/index.js";
+import { runWeeklyDigest, weeklySentinelPath } from "../../src/weekly/index.js";
 import { archiveRun } from "../../src/archivist/index.js";
 import type { ScoredItem, SourceSummary } from "../../src/types.js";
 import type { Publisher } from "../../src/orchestrator.js";
@@ -60,7 +60,7 @@ describe("runWeeklyDigest", () => {
     const r = await runWeeklyDigest({
       now: fixedNow,
       repoRoot: root,
-      env: {},
+      env: { BUTTONDOWN_API_KEY: "test-key" },
     });
     expect(r.status).toBe("no_days_available");
     expect(r.missingDays).toHaveLength(7);
@@ -144,6 +144,50 @@ describe("runWeeklyDigest", () => {
     expect(r.reason).toBe("publish_failed");
     // Digest still written to disk for inspection
     expect(r.digestPath && existsSync(r.digestPath)).toBe(true);
+  });
+
+  it("writes sentinel after publish and short-circuits on re-run", async () => {
+    seedDay(root, "2026-04-18", [mkItem("a", 0.9)]);
+    let calls = 0;
+    const publisher: Publisher = {
+      publish: async () => {
+        calls++;
+        return { id: "em_weekly_2", attempts: 1 };
+      },
+    };
+    const first = await runWeeklyDigest({
+      now: fixedNow,
+      repoRoot: root,
+      env: {},
+      publisher,
+    });
+    expect(first.status).toBe("published");
+    expect(calls).toBe(1);
+    const sentinel = weeklySentinelPath(root, first.weekId);
+    expect(existsSync(sentinel)).toBe(true);
+    expect(readFileSync(sentinel, "utf8").trim()).toBe("em_weekly_2");
+
+    const second = await runWeeklyDigest({
+      now: fixedNow,
+      repoRoot: root,
+      env: {},
+      publisher,
+    });
+    expect(second.status).toBe("idempotent_skip");
+    expect(calls).toBe(1);
+  });
+
+  it("fails fast when BUTTONDOWN_API_KEY missing and no publisher injected", async () => {
+    seedDay(root, "2026-04-18", [mkItem("a", 0.9)]);
+    const r = await runWeeklyDigest({
+      now: fixedNow,
+      repoRoot: root,
+      env: {}, // no BUTTONDOWN_API_KEY, no DRY_RUN, no injected publisher
+    });
+    expect(r.status).toBe("failed");
+    expect(r.reason).toBe("missing_api_key");
+    // Digest should NOT be written — the guard short-circuits before build.
+    expect(r.digestPath).toBeUndefined();
   });
 
   it("tolerates corrupt items.json (skips the day, continues)", async () => {

@@ -24,7 +24,9 @@ jobs:
     env:
       MODE: weekly
       DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # No ANTHROPIC_API_KEY: the weekly runner never calls Claude — it
+      # reads existing items.json files and re-ranks by stored relevance.
+      # Keeping the surface narrow reduces supply-chain blast radius.
       BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
     steps:
       - uses: actions/checkout@v4
@@ -56,12 +58,18 @@ jobs:
             echo "committed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          WEEK_ID="$(date -u +%G-W%V)"
+          # Anchor the week id on *yesterday* to match runWeeklyDigest, which
+          # rolls up the preceding Sunday-inclusive week. `date -u +%G-W%V`
+          # on a Monday run would report the NEW week (e.g. W17) while the
+          # file on disk is `weekly/2026-W16.md` — the commit message must
+          # match the artifact.
+          WEEK_ID="$(date -u -d 'yesterday' +%G-W%V)"
           git commit -m "archive: weekly digest $WEEK_ID"
           echo "committed=true" >> "$GITHUB_OUTPUT"
       - name: gitleaks secret scan
         if: ${{ steps.commit.outputs.committed == 'true' }}
-        uses: gitleaks/gitleaks-action@v2
+        # Pinned to v2 commit SHA (immutable; floating tags can be moved).
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Push weekly digest
@@ -69,4 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           git pull --rebase --autostash origin ${GITHUB_REF_NAME}
-          git push origin HEAD:${GITHUB_REF_NAME}
+          if ! git push origin HEAD:${GITHUB_REF_NAME}; then
+            echo "::error::Weekly DIVERGENCE — Buttondown publish succeeded but git push failed. The weekly sentinel (weekly/{weekId}.published) is stranded on this runner; a manual re-dispatch of this workflow would re-publish. Operator must investigate before re-dispatch (retry push from local, or pause the workflow)."
+            exit 1
+          fi

@@ -72,12 +72,18 @@ jobs:
       # leaves the runner.
       - name: gitleaks secret scan
         if: ${{ steps.commit.outputs.committed == 'true' }}
-        uses: gitleaks/gitleaks-action@v2
+        # Pinned to v2 commit SHA (floating tags can be moved to malicious
+        # commits; SHA pin is immutable).
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Un-06: a push failure after Buttondown 2xx is loud; the next
-      # run's E-06 backfill scan (src/backfill.ts) re-runs the day by
-      # detecting issue.md without .published.
+      # Un-06 REALITY CHECK: if `git push` fails after the Buttondown 2xx,
+      # the archive commit stays only on the ephemeral runner. The next
+      # cron starts from a clean checkout — no issue.md, no .published —
+      # so the backfill scan finds nothing and the orchestrator runs
+      # normally, issuing a DUPLICATE send. Backfill detect-only protects
+      # the in-process partial-write case, NOT a failed push. A proper
+      # remote-side guard is future work.
       - name: Push daily archive
         if: ${{ steps.commit.outputs.committed == 'true' }}
         run: |
@@ -87,6 +93,6 @@ jobs:
           # insurance). Autostash preserves the just-made archive commit.
           git pull --rebase --autostash origin ${GITHUB_REF_NAME}
           if ! git push origin HEAD:${GITHUB_REF_NAME}; then
-            echo "::error::Un-06 DIVERGENCE — Buttondown publish succeeded but git push failed. Next run's E-06 backfill will detect missing .published and re-publish."
+            echo "::error::Un-06 DIVERGENCE — Buttondown publish succeeded but git push failed. The archive commit is stranded on this runner; the next run starts from a clean checkout and will re-collect + re-publish, sending a DUPLICATE to subscribers. Operator must investigate before the next cron fires (e.g. retry push from local, or pause the workflow)."
             exit 1
           fi
