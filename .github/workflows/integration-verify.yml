@@ -1,0 +1,50 @@
+name: Integration Verify
+
+# E7 fitness function: "All 10 IV scenarios pass in CI on an
+# integration-verify.yml workflow on branch push and PR."
+#
+# This workflow is the authoritative gate for the cross-epic contract suite
+# + the 10 IV scenarios (spec §4) + the E2E fixture run. It runs the full
+# `pnpm test` as well (ci.yml-equivalent) so a green integration-verify
+# implies a green ci. Keeping this as a distinct workflow lets the epic's
+# coverage be visible on every PR, even if ci.yml changes later.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "feat/**"
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: E7 Integration Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+
+      # Typecheck everything; a drift in any source module must block the gate.
+      - name: Typecheck
+        run: pnpm lint
+
+      # Run the dedicated integration suite FIRST so a failure surfaces with
+      # a tight log even when the broader test suite would also fail.
+      - name: Integration tests (contracts + scenarios + e2e)
+        run: pnpm exec vitest run tests/integration
+
+      # Run the full suite to confirm no regression elsewhere. (Redundant
+      # with ci.yml on main, but this workflow is the explicit E7 gate.)
+      - name: Full test suite
+        run: pnpm test
