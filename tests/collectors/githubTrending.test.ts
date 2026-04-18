@@ -6,6 +6,7 @@ import {
   parseTrendingHtml,
 } from "../../src/collectors/githubTrending.js";
 import type { CollectorContext } from "../../src/collectors/types.js";
+import { makeCollectorMetrics } from "../../src/collectors/types.js";
 
 const HTML = readFileSync(
   path.join(process.cwd(), "fixtures", "github-trending.html"),
@@ -18,6 +19,7 @@ function makeCtx(): CollectorContext {
     cutoffMs: 0,
     abortSignal: new AbortController().signal,
     env: {},
+    metrics: makeCollectorMetrics(),
   };
 }
 

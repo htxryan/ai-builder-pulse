@@ -6,6 +6,7 @@ import {
   pickRedditMode,
 } from "../../src/collectors/reddit.js";
 import type { CollectorContext } from "../../src/collectors/types.js";
+import { makeCollectorMetrics } from "../../src/collectors/types.js";
 
 const LISTING = readFileSync(
   path.join(process.cwd(), "fixtures", "reddit-localllama.json"),
@@ -18,6 +19,7 @@ function ctxWith(env: NodeJS.ProcessEnv, cutoffMs = 0): CollectorContext {
     cutoffMs,
     abortSignal: new AbortController().signal,
     env,
+    metrics: makeCollectorMetrics(),
   };
 }
 

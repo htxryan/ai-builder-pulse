@@ -1,8 +1,21 @@
 import type { Category, RawItem, ScoredItem } from "../types.js";
 import { CATEGORIES, ScoredItemSchema } from "../types.js";
 
+// Optional cost/token metrics emitted by curators that talk to a paid API.
+// MockCurator leaves this undefined; ClaudeCurator populates after each
+// successful `curate` call so the orchestrator can surface the run's cost in
+// the operator job summary.
+export interface CuratorMetrics {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly estimatedUsd: number;
+}
+
 export interface Curator {
   curate(items: RawItem[]): Promise<ScoredItem[]>;
+  // Optional — returns metrics from the most recent `curate` call. Curators
+  // that do not track cost (e.g. `MockCurator`) simply omit this hook.
+  lastMetrics?(): CuratorMetrics | undefined;
 }
 
 function pickCategory(item: RawItem): Category {

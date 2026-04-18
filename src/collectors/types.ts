@@ -1,10 +1,23 @@
 import type { RawItem, RunContext } from "../types.js";
 
+// Mutable metrics bag shared between the collector and `fetchAll`. Collectors
+// increment counters here instead of silently swallowing partial failures in
+// `catch {}`. The bag is intentionally per-collector so failures from HN are
+// not conflated with failures from Reddit.
+export interface CollectorMetrics {
+  redirectFailures: number;
+}
+
+export function makeCollectorMetrics(): CollectorMetrics {
+  return { redirectFailures: 0 };
+}
+
 export interface CollectorContext {
   readonly runDate: string;
   readonly cutoffMs: number;
   readonly abortSignal: AbortSignal;
   readonly env: NodeJS.ProcessEnv;
+  readonly metrics: CollectorMetrics;
 }
 
 export interface Collector {
@@ -33,5 +46,6 @@ export function makeCollectorContext(
     cutoffMs: cutoffForRunDate(parent.runDate),
     abortSignal,
     env,
+    metrics: makeCollectorMetrics(),
   };
 }

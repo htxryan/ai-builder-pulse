@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { HnCollector } from "../../src/collectors/hn.js";
 import type { CollectorContext } from "../../src/collectors/types.js";
+import { makeCollectorMetrics } from "../../src/collectors/types.js";
 
 function makeCtx(cutoffMs = 0): CollectorContext {
   return {
@@ -8,6 +9,7 @@ function makeCtx(cutoffMs = 0): CollectorContext {
     cutoffMs,
     abortSignal: new AbortController().signal,
     env: {},
+    metrics: makeCollectorMetrics(),
   };
 }
 

@@ -4,6 +4,7 @@ import {
   twitterStubStatus,
 } from "../../src/collectors/twitter.js";
 import type { CollectorContext } from "../../src/collectors/types.js";
+import { makeCollectorMetrics } from "../../src/collectors/types.js";
 
 function ctx(env: NodeJS.ProcessEnv): CollectorContext {
   return {
@@ -11,6 +12,7 @@ function ctx(env: NodeJS.ProcessEnv): CollectorContext {
     cutoffMs: 0,
     abortSignal: new AbortController().signal,
     env,
+    metrics: makeCollectorMetrics(),
   };
 }
 

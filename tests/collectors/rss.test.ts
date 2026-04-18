@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { RssCollector, parseFeedXml } from "../../src/collectors/rss.js";
 import type { CollectorContext } from "../../src/collectors/types.js";
+import { makeCollectorMetrics } from "../../src/collectors/types.js";
 
 const ATOM = readFileSync(path.join(process.cwd(), "fixtures", "rss-atom.xml"), "utf8");
 const RSS20 = readFileSync(path.join(process.cwd(), "fixtures", "rss-20.xml"), "utf8");
@@ -13,6 +14,7 @@ function makeCtx(cutoffMs = 0): CollectorContext {
     cutoffMs,
     abortSignal: new AbortController().signal,
     env: {},
+    metrics: makeCollectorMetrics(),
   };
 }
 

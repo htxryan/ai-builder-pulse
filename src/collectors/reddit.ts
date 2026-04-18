@@ -127,7 +127,9 @@ export async function mapRedditPost(
     url = resolved.url;
     sourceUrl = resolved.sourceUrl;
   } catch {
-    // keep original
+    // Redirect resolution failed — keep the original URL but record the
+    // miss so `runSummary` can surface how many items shipped un-resolved.
+    ctx.metrics.redirectFailures += 1;
   }
   const publishedAt = new Date(post.created_utc * 1000).toISOString();
   const parsed = RawItemSchema.safeParse({

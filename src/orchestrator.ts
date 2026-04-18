@@ -8,7 +8,8 @@ import {
   AnthropicCurationClient,
 } from "./curator/index.js";
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
-import { log } from "./log.js";
+import type { CuratorMetrics } from "./curator/mockCurator.js";
+import { bindRunId, log, makeRunId } from "./log.js";
 import { runBackfill } from "./backfill.js";
 import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
 import { renderIssue, type RenderedIssue } from "./renderer/index.js";
@@ -43,16 +44,36 @@ export interface OrchestratorOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+export type OrchestratorStatus =
+  | "published"
+  | "published_archive_failed"
+  | "dry_run"
+  | "idempotent_skip"
+  | "empty_skip"
+  | "source_floor_skip"
+  | "failed";
+
+// Per-stage wall time in milliseconds. Keys are populated as each stage
+// completes (successfully or not) so a skip/fail run carries partial data
+// through to the job-summary renderer.
+export interface StageTimings {
+  collect?: number;
+  preFilter?: number;
+  curate?: number;
+  linkIntegrity?: number;
+  render?: number;
+  publish?: number;
+  archive?: number;
+  totalMs?: number;
+}
+
 export interface OrchestratorResult {
   runDate: string;
-  status:
-    | "published"
-    | "published_archive_failed"
-    | "dry_run"
-    | "idempotent_skip"
-    | "empty_skip"
-    | "source_floor_skip"
-    | "failed";
+  // Stable correlation id shared by every log line emitted during this run.
+  // Also surfaced in the GHA job summary so operators can grep the raw logs
+  // for a single run in a pipeline that may have multiple concurrent jobs.
+  runId: string;
+  status: OrchestratorStatus;
   reason?: string;
   scored?: ScoredItem[];
   // Per-source summary including pre-filter `keptCount`. Populated whenever
@@ -63,6 +84,11 @@ export interface OrchestratorResult {
   rendered?: RenderedIssue;
   // Buttondown publish id, only set on status === "published".
   publishId?: string;
+  // Per-stage wall times. Always present (possibly partial on early skips).
+  timings: StageTimings;
+  // Cost and token usage from the curator, if the curator exposes it.
+  // MockCurator leaves this undefined; ClaudeCurator populates it.
+  curatorMetrics?: CuratorMetrics | undefined;
 }
 
 const DEFAULT_MIN_ITEMS = 5;
@@ -112,6 +138,22 @@ export async function runOrchestrator(
   const runDate = deriveRunDate(now);
   const repoRoot = opts.repoRoot ?? process.cwd();
   const dryRun = env.DRY_RUN === "1";
+  const runId = makeRunId(now);
+  bindRunId(runId);
+  const t0 = Date.now();
+  const timings: StageTimings = {};
+  const stage = async <T>(name: keyof StageTimings, fn: () => Promise<T>): Promise<T> => {
+    const start = Date.now();
+    try {
+      return await fn();
+    } finally {
+      timings[name] = Date.now() - start;
+    }
+  };
+  const done = (result: Omit<OrchestratorResult, "runId" | "timings">): OrchestratorResult => {
+    timings.totalMs = Date.now() - t0;
+    return { ...result, runId, timings };
+  };
   const ctx: RunContext = {
     runDate,
     dryRun,
@@ -130,6 +172,7 @@ export async function runOrchestrator(
 
   log.info("orchestrator start", {
     runDate,
+    runId,
     dryRun,
     repoRoot,
     minItems: ctx.minItemsToPublish,
@@ -148,7 +191,11 @@ export async function runOrchestrator(
   // S-03 sentinel check (bypassed when DRY_RUN)
   if (!dryRun && checkSentinel(repoRoot, runDate)) {
     log.info("S-03 idempotent skip: .published already exists", { runDate });
-    return { runDate, status: "idempotent_skip", reason: "sentinel_present" };
+    return done({
+      runDate,
+      status: "idempotent_skip",
+      reason: "sentinel_present",
+    });
   }
   if (dryRun && checkSentinel(repoRoot, runDate)) {
     log.info("[DRY_RUN] sentinel present but bypassed (O-02)", { runDate });
@@ -164,11 +211,11 @@ export async function runOrchestrator(
       log.error("BUTTONDOWN_API_KEY not set (fail-fast pre-collection)", {
         runDate,
       });
-      return {
+      return done({
         runDate,
         status: "failed",
         reason: "missing_api_key",
-      };
+      });
     }
   }
 
@@ -182,20 +229,22 @@ export async function runOrchestrator(
   let items: RawItem[];
   let summary: SourceSummary;
   try {
-    const r = await fetchAll(ctx);
+    const r = await stage("collect", () => fetchAll(ctx));
     items = r.items;
     summary = r.summary;
   } catch (err) {
     log.error("fetchAll failed (E-04)", {
       error: err instanceof Error ? err.message : String(err),
     });
-    return { runDate, status: "failed", reason: "fetch_failed" };
+    return done({ runDate, status: "failed", reason: "fetch_failed" });
   }
 
   // E3 pre-filter: freshness, URL-shape, normalized-URL dedup. Runs BEFORE
   // S-05 so the floor reflects sources that contribute *usable* items, not
   // just sources that returned without erroring.
-  const preFiltered = applyPreFilter(items, runDate, summary);
+  const preFiltered = await stage("preFilter", async () =>
+    applyPreFilter(items, runDate, summary),
+  );
   log.info("pre-filter complete", {
     inputCount: preFiltered.stats.inputCount,
     freshnessDropped: preFiltered.stats.freshnessDropped,
@@ -217,12 +266,12 @@ export async function runOrchestrator(
       contributingSources,
       minSources: ctx.minSources,
     });
-    return {
+    return done({
       runDate,
       status: "source_floor_skip",
       reason: "S-05",
       summary: filteredSummary,
-    };
+    });
   }
 
   // Curate — env-selectable:
@@ -231,13 +280,20 @@ export async function runOrchestrator(
   const curator = opts.curator ?? selectCurator(env);
   let scored: ScoredItem[];
   try {
-    scored = await curator.curate(filteredItems);
+    scored = await stage("curate", () => curator.curate(filteredItems));
   } catch (err) {
     log.error("curator failed (E-05/Un-05)", {
       error: err instanceof Error ? err.message : String(err),
     });
-    return { runDate, status: "failed", reason: "curator_failed" };
+    return done({
+      runDate,
+      status: "failed",
+      reason: "curator_failed",
+      summary: filteredSummary,
+      curatorMetrics: curator.lastMetrics?.(),
+    });
   }
+  const curatorMetrics = curator.lastMetrics?.();
 
   // E-05 defensive re-check (Curator should have enforced this already).
   if (scored.length !== filteredItems.length) {
@@ -245,13 +301,14 @@ export async function runOrchestrator(
       expected: filteredItems.length,
       actual: scored.length,
     });
-    return {
+    return done({
       runDate,
       status: "failed",
       reason: "E-05",
       scored,
       summary: filteredSummary,
-    };
+      curatorMetrics,
+    });
   }
 
   // Un-01 link-integrity gate. Pass an empty allowlist: the renderer's
@@ -260,19 +317,22 @@ export async function runOrchestrator(
   // ScoredItem fields. Including the allowlist here would *widen* the gate
   // and let a hallucinated `https://buttondown.com/ai-builder-pulse/...` URL
   // in a Claude description bypass Un-01.
-  const integrity = verifyLinkIntegrity(scored, filteredItems, []);
+  const integrity = await stage("linkIntegrity", async () =>
+    verifyLinkIntegrity(scored, filteredItems, []),
+  );
   if (!integrity.ok) {
     log.error("Un-01 link-integrity violation", {
       violationCount: integrity.violations.length,
       sample: integrity.violations.slice(0, 5),
     });
-    return {
+    return done({
       runDate,
       status: "failed",
       reason: "Un-01",
       scored,
       summary: filteredSummary,
-    };
+      curatorMetrics,
+    });
   }
   log.info("link-integrity ok", {
     checked: integrity.checkedCount,
@@ -291,19 +351,20 @@ export async function runOrchestrator(
       kept: kept.length,
       min: ctx.minItemsToPublish,
     });
-    return {
+    return done({
       runDate,
       status: "empty_skip",
       reason: "S-02",
       scored,
       summary: filteredSummary,
-    };
+      curatorMetrics,
+    });
   }
 
   // E5 C5 render. Happens even on DRY_RUN so operators see the exact body
   // that would have been sent (O-02: "pipeline runs up to but not including
   // the POST"). Renderer is pure so this is cheap.
-  const rendered = renderIssue(runDate, kept);
+  const rendered = await stage("render", async () => renderIssue(runDate, kept));
   log.info("renderer complete", {
     subjectLength: rendered.subject.length,
     bodyLength: rendered.body.length,
@@ -316,13 +377,14 @@ export async function runOrchestrator(
       itemCount: kept.length,
       subject: rendered.subject,
     });
-    return {
+    return done({
       runDate,
       status: "dry_run",
       scored,
       summary: filteredSummary,
       rendered,
-    };
+      curatorMetrics,
+    });
   }
 
   // E5 Publisher. Default adapter POSTs to Buttondown; tests and E7 wire a
@@ -331,7 +393,7 @@ export async function runOrchestrator(
   const publisher = opts.publisher ?? defaultButtondownPublisher(env);
   let publishResult: PublishOutcome;
   try {
-    publishResult = await publisher.publish(rendered);
+    publishResult = await stage("publish", () => publisher.publish(rendered));
   } catch (err) {
     const status = err instanceof PublishError ? err.status : undefined;
     const attempts =
@@ -341,14 +403,15 @@ export async function runOrchestrator(
       httpStatus: status,
       attempts,
     });
-    return {
+    return done({
       runDate,
       status: "failed",
       reason: "publish_failed",
       scored,
       summary: filteredSummary,
       rendered,
-    };
+      curatorMetrics,
+    });
   }
 
   log.info("publish ok", {
@@ -366,14 +429,16 @@ export async function runOrchestrator(
   // covers (issue.md present, .published missing) on the NEXT cron run.
   let archiveOk = true;
   try {
-    archiveRun({
-      runDate,
-      repoRoot,
-      rendered,
-      scored,
-      summary: filteredSummary,
-      publishId: publishResult.id,
-      publishedAt: new Date().toISOString(),
+    await stage("archive", async () => {
+      archiveRun({
+        runDate,
+        repoRoot,
+        rendered,
+        scored,
+        summary: filteredSummary,
+        publishId: publishResult.id,
+        publishedAt: new Date().toISOString(),
+      });
     });
   } catch (err) {
     archiveOk = false;
@@ -384,14 +449,15 @@ export async function runOrchestrator(
     });
   }
 
-  return {
+  return done({
     runDate,
     status: archiveOk ? "published" : "published_archive_failed",
     scored,
     summary: filteredSummary,
     rendered,
     publishId: publishResult.id,
-  };
+    curatorMetrics,
+  });
 }
 
 function defaultButtondownPublisher(env: NodeJS.ProcessEnv): Publisher {

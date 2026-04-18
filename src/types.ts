@@ -90,6 +90,11 @@ export const SourceSummarySchema = z.record(
     // pre-filter has not yet run when collectors first emit their summary;
     // populated by applyPreFilter.
     keptCount: z.number().int().nonnegative().optional(),
+    // Count of items where redirect resolution silently failed (the item was
+    // still kept with its original URL). Surfaced here so operators can see
+    // whether a spike in redirect failures is driving downstream dedup churn.
+    // Only populated by collectors that resolve redirects (hn, reddit).
+    redirectFailures: z.number().int().nonnegative().optional(),
   }),
 );
 export type SourceSummary = z.infer<typeof SourceSummarySchema>;

@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { log } from "../log.js";
-import type { Curator } from "./mockCurator.js";
+import type { Curator, CuratorMetrics } from "./mockCurator.js";
 import { SYSTEM_PROMPT, PROMPT_VERSION } from "./prompt.js";
 import type { RawItem, ScoredItem } from "../types.js";
 import { CategorySchema, ScoredItemSchema } from "../types.js";
@@ -75,6 +75,7 @@ export class ClaudeCurator implements Curator {
   private readonly inputCostPerMTok: number;
   private readonly outputCostPerMTok: number;
   private readonly systemPrompt: string;
+  private _lastMetrics: CuratorMetrics | undefined;
 
   constructor(opts: ClaudeCuratorOptions) {
     this.client = opts.client;
@@ -147,19 +148,31 @@ export class ClaudeCurator implements Curator {
       );
     }
 
-    const estUsd =
-      (totalInput / 1_000_000) * this.inputCostPerMTok +
-      (totalOutput / 1_000_000) * this.outputCostPerMTok;
+    const estUsd = Number(
+      (
+        (totalInput / 1_000_000) * this.inputCostPerMTok +
+        (totalOutput / 1_000_000) * this.outputCostPerMTok
+      ).toFixed(4),
+    );
+    this._lastMetrics = {
+      inputTokens: totalInput,
+      outputTokens: totalOutput,
+      estimatedUsd: estUsd,
+    };
     log.info("curator done", {
       totalItems: items.length,
       chunkCount: chunks.length,
       inputTokens: totalInput,
       outputTokens: totalOutput,
-      estimatedUsd: Number(estUsd.toFixed(4)),
+      estimatedUsd: estUsd,
       promptVersion: PROMPT_VERSION,
     });
 
     return scored;
+  }
+
+  lastMetrics(): CuratorMetrics | undefined {
+    return this._lastMetrics;
   }
 
   private async callWithRetry(

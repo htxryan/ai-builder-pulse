@@ -74,7 +74,9 @@ export async function mapHnHitToRawItem(
     url = resolved.url;
     sourceUrl = resolved.sourceUrl;
   } catch {
-    // if redirect resolution fails, keep the original url
+    // Redirect resolution failed — keep the original URL but record the
+    // miss so `runSummary` can surface how many items shipped un-resolved.
+    ctx.metrics.redirectFailures += 1;
   }
   const publishedAt = new Date(hit.created_at_i * 1000).toISOString();
   const parsed = RawItemSchema.safeParse({

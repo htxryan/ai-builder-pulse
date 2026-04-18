@@ -10,7 +10,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { log } from "../log.js";
+import { bindRunId, log, makeRunId } from "../log.js";
 import { publishToButtondown, PublishError } from "../publisher/index.js";
 import type { Publisher } from "../orchestrator.js";
 import {
@@ -38,14 +38,25 @@ export type WeeklyStatus =
   | "idempotent_skip"
   | "failed";
 
+export interface WeeklyStageTimings {
+  readonly loadDays?: number;
+  readonly buildDigest?: number;
+  readonly publish?: number;
+  readonly totalMs?: number;
+}
+
 export interface WeeklyResult {
   readonly weekId: string;
+  readonly runId: string;
   readonly status: WeeklyStatus;
   readonly availableDays: readonly string[];
   readonly missingDays: readonly string[];
   readonly digestPath?: string;
   readonly publishId?: string;
   readonly reason?: string;
+  readonly timings: WeeklyStageTimings;
+  // Total items across all days in the digest, when available.
+  readonly itemCount?: number;
 }
 
 function weeklyDir(repoRoot: string): string {
@@ -99,6 +110,14 @@ export async function runWeeklyDigest(
   const now = opts.now ?? new Date();
   const repoRoot = opts.repoRoot ?? process.cwd();
   const dryRun = env.DRY_RUN === "1";
+  const runId = makeRunId(now);
+  bindRunId(runId);
+  const t0 = Date.now();
+  const timings: { loadDays?: number; buildDigest?: number; publish?: number; totalMs?: number } = {};
+  const finish = (r: Omit<WeeklyResult, "runId" | "timings">): WeeklyResult => {
+    timings.totalMs = Date.now() - t0;
+    return { ...r, runId, timings };
+  };
 
   // Anchor the rollup window at the *previous* UTC day so a Monday 14:30 UTC
   // cron run rolls up the preceding Sunday-inclusive week. Using `now`
@@ -109,19 +128,19 @@ export async function runWeeklyDigest(
   const weekId = isoWeekId(anchor);
   const window = priorSevenDays(endDate);
 
-  log.info("weekly digest start", { weekId, window, dryRun });
+  log.info("weekly digest start", { weekId, runId, window, dryRun });
 
   // Weekly S-03 equivalent: bail before any Buttondown POST if this weekId
   // was already published. Bypassed under DRY_RUN so operators can preview.
   if (!dryRun && existsSync(weeklySentinelPath(repoRoot, weekId))) {
     log.info("weekly idempotent skip: sentinel present", { weekId });
-    return {
+    return finish({
       weekId,
       status: "idempotent_skip",
       availableDays: [],
       missingDays: [],
       reason: "sentinel_present",
-    };
+    });
   }
 
   // Mirror the daily orchestrator fail-fast: refuse to read 7 days of
@@ -133,16 +152,17 @@ export async function runWeeklyDigest(
       log.error("BUTTONDOWN_API_KEY not set (weekly fail-fast pre-collection)", {
         weekId,
       });
-      return {
+      return finish({
         weekId,
         status: "failed",
         availableDays: [],
         missingDays: [],
         reason: "missing_api_key",
-      };
+      });
     }
   }
 
+  const loadStart = Date.now();
   const availableDays: ArchivedDay[] = [];
   const missingDays: string[] = [];
   for (const d of window) {
@@ -150,23 +170,26 @@ export async function runWeeklyDigest(
     if (loaded) availableDays.push(loaded);
     else missingDays.push(d);
   }
+  timings.loadDays = Date.now() - loadStart;
 
   if (availableDays.length === 0) {
     log.warn("weekly: no days available in window", { weekId, window });
-    return {
+    return finish({
       weekId,
       status: "no_days_available",
       availableDays: [],
       missingDays: window,
       reason: "no_items_json_in_window",
-    };
+    });
   }
 
+  const buildStart = Date.now();
   const digest = buildWeeklyDigest({
     weekId,
     availableDays,
     missingDays,
   });
+  timings.buildDigest = Date.now() - buildStart;
 
   log.info("weekly digest built", {
     weekId,
@@ -189,21 +212,24 @@ export async function runWeeklyDigest(
       subject: digest.subject,
       digestPath: dest,
     });
-    return {
+    return finish({
       weekId,
       status: "dry_run",
       availableDays: availableDays.map((d) => d.runDate),
       missingDays,
       digestPath: dest,
-    };
+      itemCount: digest.itemCount,
+    });
   }
 
   const publisher = opts.publisher ?? defaultPublisher(env);
+  const publishStart = Date.now();
   try {
     const result = await publisher.publish({
       subject: digest.subject,
       body: digest.body,
     });
+    timings.publish = Date.now() - publishStart;
     log.info("weekly publish ok", {
       weekId,
       publishId: result.id,
@@ -227,28 +253,31 @@ export async function runWeeklyDigest(
         },
       );
     }
-    return {
+    return finish({
       weekId,
       status: sentinelOk ? "published" : "published_sentinel_failed",
       availableDays: availableDays.map((d) => d.runDate),
       missingDays,
       digestPath: dest,
       publishId: result.id,
-    };
+      itemCount: digest.itemCount,
+    });
   } catch (err) {
+    timings.publish = Date.now() - publishStart;
     const status = err instanceof PublishError ? err.status : undefined;
     log.error("weekly publish failed", {
       weekId,
       error: err instanceof Error ? err.message : String(err),
       httpStatus: status,
     });
-    return {
+    return finish({
       weekId,
       status: "failed",
       availableDays: availableDays.map((d) => d.runDate),
       missingDays,
       digestPath: dest,
       reason: "publish_failed",
-    };
+      itemCount: digest.itemCount,
+    });
   }
 }

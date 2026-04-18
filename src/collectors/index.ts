@@ -10,8 +10,8 @@ import {
   CollectorTimeoutError,
   withTimeout,
 } from "./timeout.js";
-import type { Collector, CollectorContext } from "./types.js";
-import { cutoffForRunDate } from "./types.js";
+import type { Collector, CollectorContext, CollectorMetrics } from "./types.js";
+import { cutoffForRunDate, makeCollectorMetrics } from "./types.js";
 
 export {
   HnCollector,
@@ -80,6 +80,7 @@ export async function fetchAll(
           error: stub.enabled
             ? "twitter not implemented in v1"
             : "ENABLE_TWITTER not set",
+          metrics: makeCollectorMetrics(),
         };
       }
       if (source === "reddit") {
@@ -90,9 +91,11 @@ export async function fetchAll(
             items: [] as RawItem[],
             status: "skipped" as const,
             error: skipReason,
+            metrics: makeCollectorMetrics(),
           };
         }
       }
+      const metrics: CollectorMetrics = makeCollectorMetrics();
       try {
         const items = await withTimeout(
           source,
@@ -103,12 +106,20 @@ export async function fetchAll(
               cutoffMs,
               abortSignal: signal,
               env,
+              metrics,
             };
             return await c.fetch(inner);
           },
           opts.abortSignal,
         );
-        return { source, items, status: "ok" as const };
+        if (metrics.redirectFailures > 0) {
+          log.warn("collector redirect failures", {
+            source,
+            redirectFailures: metrics.redirectFailures,
+            itemCount: items.length,
+          });
+        }
+        return { source, items, status: "ok" as const, metrics };
       } catch (err) {
         const kind = classifyError(err);
         const msg = err instanceof Error ? err.message : String(err);
@@ -118,6 +129,7 @@ export async function fetchAll(
           items: [] as RawItem[],
           status: kind,
           error: msg,
+          metrics,
         };
       }
     }),
@@ -130,6 +142,9 @@ export async function fetchAll(
       count: r.items.length,
       status: r.status,
       error: r.status === "ok" ? undefined : r.error,
+      ...(r.metrics.redirectFailures > 0
+        ? { redirectFailures: r.metrics.redirectFailures }
+        : {}),
     };
     for (const it of r.items) items.push(it);
   }
