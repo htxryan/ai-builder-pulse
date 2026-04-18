@@ -9,7 +9,7 @@
 //   C2 RawItem         (E2 → E3, E4): Zod round-trip for every source variant
 //   C3 ScoredItem      (E4 → E5, E6): Zod + E-05 count invariant
 //   C4 Link-integrity  (E4 → E1 gate): fabricated fails, legit passes, allowlist
-//   C5 Rendered md     (E5 → E6, Buttondown): golden-file comparison
+//   C5 Rendered md     (E5 → E6, Buttondown): determinism + allowlist
 //   C6 Archive path    (E6 → Weekly): file layout after archiveRun
 //   C7 .published      (E6 write → E1 read): S-03 idempotency + E-06 backfill
 //   C8 RunDate + cron  (E1 → all): UTC-date derivation + day-boundary
@@ -346,16 +346,13 @@ describe("C5 Rendered markdown contract (E5 → E6, Buttondown)", () => {
       },
     ];
     const r = verifyLinkIntegrity(pseudo, raw, RENDERER_TEMPLATE_URL_PATTERNS);
-    // Template URLs are allowlisted; any new URL that appears only in rendered
-    // body (e.g. archive URL) must be covered by the allowlist. We don't
-    // assert ok=true strictly — we assert NO violation references a template
-    // URL, since planted URLs are tested elsewhere.
-    for (const v of r.violations) {
-      const matchesTemplate = RENDERER_TEMPLATE_URL_PATTERNS.some((re) =>
-        re.test(v.url),
-      );
-      expect(matchesTemplate).toBe(false);
-    }
+    // The rendered body contains only (a) URLs from the raw input and
+    // (b) renderer template URLs covered by the allowlist. No other URLs
+    // should appear — so the integrity check must pass with zero violations.
+    // A regression that plants a fabricated URL inside the renderer would
+    // surface as a non-allowlisted URL and fail this assertion.
+    expect(r.violations).toEqual([]);
+    expect(r.ok).toBe(true);
   });
 });
 

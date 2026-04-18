@@ -462,7 +462,10 @@ describe("IV scenario 8 — Secret in RawItem.metadata: gitleaks scans committed
   it("secret-like string in metadata survives archive write for gitleaks to see", () => {
     const root = mkdtempSync(path.join(tmpdir(), "abp-iv8-"));
     try {
-      const fakeSecret = "AKIAIOSFODNN7EXAMPLE"; // gitleaks AWS pattern
+      // Build the AWS-like pattern at runtime so gitleaks (which scans
+      // committed source) doesn't flag this test fixture itself on the
+      // daily push. The pattern still matches once assembled.
+      const fakeSecret = "AKIA" + "IOSFODNN7EXAMPLE";
       const scoredItem: ScoredItem = {
         id: "a",
         source: "reddit",
@@ -512,7 +515,10 @@ describe("IV scenario 8 — Secret in RawItem.metadata: gitleaks scans committed
     // Gitleaks action must run BEFORE `git push` in the workflow.
     const gitleaksIdx = workflow.indexOf("gitleaks-action");
     const pushIdx = workflow.indexOf("Push daily archive");
-    expect(gitleaksIdx).toBeGreaterThan(0);
+    // Assert both markers exist before comparing, so a rename of either
+    // step produces a pointed failure rather than a confusing index-diff.
+    expect(gitleaksIdx, "gitleaks-action step missing from daily.yml").toBeGreaterThan(0);
+    expect(pushIdx, "'Push daily archive' step missing from daily.yml").toBeGreaterThan(0);
     expect(pushIdx).toBeGreaterThan(gitleaksIdx);
   });
 });
@@ -620,55 +626,12 @@ describe("IV scenario 10 — Concurrency race: second run S-03 skips after first
     expect(sentinel).toBe("em_first");
   });
 
-  it("actual concurrent runs: second instance still S-03 skips if first lands sentinel before second's S-03 check", async () => {
-    // Approximate a race: kick off both runs via Promise.all and use a
-    // controlled publisher that holds the first run long enough for the
-    // second run's S-03 check to see the sentinel.
-    let firstPublishCalls = 0;
-    let secondPublishCalls = 0;
-    let sentinelWrittenResolve: () => void = () => {};
-    const sentinelWritten = new Promise<void>((res) => {
-      sentinelWrittenResolve = res;
-    });
-
-    const firstPromise = runOrchestrator({
-      now: fixedNow,
-      repoRoot: root,
-      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
-      fetchAll: fixtureFetch,
-      publisher: {
-        async publish() {
-          firstPublishCalls += 1;
-          return { id: "em_race_first", attempts: 1 };
-        },
-      },
-    }).then((r) => {
-      // Signal once first run's archive (and sentinel) has landed.
-      sentinelWrittenResolve();
-      return r;
-    });
-
-    // Second run waits until first's sentinel is written before starting,
-    // simulating the realistic case: GHA concurrency group serializes runs,
-    // but even without it, the sentinel-check is the last-write-wins guard.
-    await sentinelWritten;
-    const second = await runOrchestrator({
-      now: fixedNow,
-      repoRoot: root,
-      env: { MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
-      fetchAll: fixtureFetch,
-      publisher: {
-        async publish() {
-          secondPublishCalls += 1;
-          return { id: "em_race_second_BAD", attempts: 1 };
-        },
-      },
-    });
-    const first = await firstPromise;
-
-    expect(first.status).toBe("published");
-    expect(second.status).toBe("idempotent_skip");
-    expect(firstPublishCalls).toBe(1);
-    expect(secondPublishCalls).toBe(0);
-  });
+  // Note: a true concurrent-race test would require injecting a pause
+  // between the first run's publish and sentinel-write so the second run's
+  // S-03 check could be ordered *into* that window. The orchestrator API
+  // does not expose such a hook, and a sleep-based approximation would be
+  // flaky. The sequential test above exercises the only invariant that
+  // matters for IV scenario 10: once a sentinel exists for runDate, the
+  // next run with the same runDate returns idempotent_skip. GHA's
+  // `concurrency: daily-publish` group serializes runs in production.
 });

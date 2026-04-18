@@ -177,9 +177,14 @@ describe("E7 E2E fixture pipeline run", () => {
 
   it("full pipeline emits expected stage log lines in order (smoke check)", async () => {
     const logs: string[] = [];
-    const logSpy = vi.spyOn(console, "log").mockImplementation((...args) => {
+    const capture = (...args: unknown[]) => {
       logs.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
-    });
+    };
+    // Spy on all three channels so any future stage emitted at warn/error
+    // (e.g. a backfill line) is still captured for the ordering assertion.
+    const logSpy = vi.spyOn(console, "log").mockImplementation(capture);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(capture);
+    const errSpy = vi.spyOn(console, "error").mockImplementation(capture);
     try {
       await runOrchestrator({
         now: fixedNow,
@@ -197,6 +202,8 @@ describe("E7 E2E fixture pipeline run", () => {
       });
     } finally {
       logSpy.mockRestore();
+      warnSpy.mockRestore();
+      errSpy.mockRestore();
     }
 
     const joined = logs.join("\n");

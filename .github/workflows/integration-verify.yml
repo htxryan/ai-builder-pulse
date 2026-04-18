@@ -14,10 +14,16 @@ on:
   push:
     branches:
       - main
-      - "feat/**"
 
 permissions:
   contents: read
+
+# Cancel superseded runs on the same ref so rapid pushes on a PR branch
+# don't queue serial workflow runs. PR event covers feat/* branches; only
+# main push is kept to avoid double-run on feat branches with an open PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   integration:
@@ -44,7 +50,8 @@ jobs:
       - name: Integration tests (contracts + scenarios + e2e)
         run: pnpm exec vitest run tests/integration
 
-      # Run the full suite to confirm no regression elsewhere. (Redundant
-      # with ci.yml on main, but this workflow is the explicit E7 gate.)
-      - name: Full test suite
-        run: pnpm test
+      # Run the rest of the suite (unit tests) to confirm no regression
+      # elsewhere. Integration tests were already executed above; excluding
+      # them here avoids running them twice in the same job.
+      - name: Unit tests (excluding integration)
+        run: pnpm exec vitest run --exclude 'tests/integration/**'
