@@ -19,7 +19,8 @@ export function findUnpublished(
     if (!isValidRunDate(entry)) continue;
     if (entry >= currentRunDate) continue;
     const dir = path.join(issuesDir, entry);
-    if (!statSync(dir).isDirectory()) continue;
+    const stat = statSync(dir, { throwIfNoEntry: false });
+    if (!stat || !stat.isDirectory()) continue;
     const issueMd = path.join(dir, "issue.md");
     const published = path.join(dir, ".published");
     if (existsSync(issueMd) && !existsSync(published)) {

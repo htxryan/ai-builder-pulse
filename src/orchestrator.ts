@@ -21,6 +21,7 @@ export interface OrchestratorResult {
   runDate: string;
   status:
     | "published"
+    | "stub_no_publisher"
     | "dry_run"
     | "idempotent_skip"
     | "empty_skip"
@@ -40,8 +41,10 @@ function parsePositiveInt(
 ): number {
   if (raw === undefined || raw === "") return fallback;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) {
-    throw new Error(`Invalid env ${name}=${raw} (expected non-negative number)`);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+    throw new Error(
+      `Invalid env ${name}=${raw} (expected positive integer >= 1)`,
+    );
   }
   return n;
 }
@@ -57,7 +60,7 @@ async function mockFetchAll(ctx: RunContext): Promise<{
       title: "Example AI tooling article on HN",
       url: "https://example.com/ai-tool-1",
       score: 120,
-      publishedAt: `${ctx.runDate}T08:00:00.000Z`,
+      publishedAt: `${ctx.runDate}T05:30:00.000Z`,
       metadata: { source: "hn", points: 120, numComments: 30, author: "someone" },
     },
     {
@@ -66,7 +69,7 @@ async function mockFetchAll(ctx: RunContext): Promise<{
       title: "trending/repo — a new AI tool",
       url: "https://github.com/trending/repo",
       score: 500,
-      publishedAt: `${ctx.runDate}T07:00:00.000Z`,
+      publishedAt: `${ctx.runDate}T05:00:00.000Z`,
       metadata: {
         source: "github-trending",
         repoFullName: "trending/repo",
@@ -81,7 +84,7 @@ async function mockFetchAll(ctx: RunContext): Promise<{
       title: "r/LocalLLaMA: running 70B locally",
       url: "https://reddit.com/r/LocalLLaMA/abc",
       score: 320,
-      publishedAt: `${ctx.runDate}T05:00:00.000Z`,
+      publishedAt: `${ctx.runDate}T04:30:00.000Z`,
       metadata: { source: "reddit", subreddit: "LocalLLaMA", upvotes: 320, numComments: 45 },
     },
     {
@@ -103,7 +106,7 @@ async function mockFetchAll(ctx: RunContext): Promise<{
       title: "Another HN story about AI infra",
       url: "https://example.com/infra-1",
       score: 85,
-      publishedAt: `${ctx.runDate}T06:30:00.000Z`,
+      publishedAt: `${ctx.runDate}T03:30:00.000Z`,
       metadata: { source: "hn", points: 85, numComments: 12 },
     },
   ];
@@ -157,7 +160,7 @@ export async function runOrchestrator(
     await runBackfill(repoRoot, runDate, { dryRun });
   } catch (err) {
     log.warn("backfill scan failed (non-blocking)", {
-      error: (err as Error).message,
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 
@@ -179,7 +182,9 @@ export async function runOrchestrator(
     items = r.items;
     summary = r.summary;
   } catch (err) {
-    log.error("fetchAll failed (E-04)", { error: (err as Error).message });
+    log.error("fetchAll failed (E-04)", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return { runDate, status: "failed", reason: "fetch_failed" };
   }
 
@@ -199,7 +204,9 @@ export async function runOrchestrator(
   try {
     scored = await curator.curate(items);
   } catch (err) {
-    log.error("curator failed (E-05/Un-05)", { error: (err as Error).message });
+    log.error("curator failed (E-05/Un-05)", {
+      error: err instanceof Error ? err.message : String(err),
+    });
     return { runDate, status: "failed", reason: "curator_failed" };
   }
 
@@ -224,9 +231,16 @@ export async function runOrchestrator(
   }
 
   // E1 does not wire real Publisher/Archivist — those land in E5/E6.
-  log.info("E1 foundation: publisher not yet wired (E5), archivist not wired (E6)", {
+  // Return a distinct status so downstream gates do not mistake this for a
+  // real publish. Until E5 lands, this path also exits non-zero in src/index.ts.
+  log.error(
+    "E1 foundation: publisher not yet wired (E5); refusing to report published",
+    { runDate, itemCount: kept.length },
+  );
+  return {
     runDate,
-    itemCount: kept.length,
-  });
-  return { runDate, status: "published", scored };
+    status: "stub_no_publisher",
+    reason: "publisher_not_implemented",
+    scored,
+  };
 }

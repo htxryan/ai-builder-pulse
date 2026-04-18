@@ -13,9 +13,12 @@ function pickCategory(item: RawItem): Category {
   return CATEGORIES[hash % CATEGORIES.length]!;
 }
 
+// Schema cap on description is 600. Keep this constant in sync.
+const DESC_MAX = 600;
+
 function truncateDescription(title: string): string {
   const base = `Mock curation for: ${title}`;
-  if (base.length >= 100) return base.slice(0, 300);
+  if (base.length >= 100) return base.slice(0, Math.min(base.length, DESC_MAX));
   return base.padEnd(100, ".");
 }
 

@@ -20,7 +20,6 @@ jobs:
       MODE: weekly
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
