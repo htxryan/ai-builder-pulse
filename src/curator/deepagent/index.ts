@@ -56,6 +56,36 @@ export { VersionDriftError, assertPinnedVersions } from "./version-guard.js";
 assertPinnedVersions();
 
 /**
+ * DA-Un-08 / DA-O-03 — LangSmith opt-in gate.
+ *
+ * Rules:
+ *   - `enableLangsmith=true` → emit an operator-visible ::warning:: making the
+ *     data-egress explicit, then return. Tracing wires via LangChain's native
+ *     auto-detection of `LANGSMITH_TRACING` / `LANGSMITH_API_KEY`.
+ *   - `enableLangsmith=false` → scrub `LANGSMITH_TRACING` + `LANGCHAIN_TRACING_V2`
+ *     to `"false"` so the presence of `LANGSMITH_API_KEY` alone cannot
+ *     auto-activate cloud tracing. Silent by design.
+ *
+ * Mutates the supplied `env` object so the scrub takes effect before the
+ * adapter imports `@langchain/*`. Callers pass `process.env` in production;
+ * tests inject a detached object so assertions don't leak across files.
+ */
+export function applyLangsmithGate(
+  cfg: Pick<DeepAgentConfig, "enableLangsmith">,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (cfg.enableLangsmith) {
+    log.warn(
+      "LangSmith tracing enabled — pre-publication content sent to LangSmith cloud",
+      { optIn: "DEEPAGENT_ENABLE_LANGSMITH=1" },
+    );
+    return;
+  }
+  env.LANGSMITH_TRACING = "false";
+  env.LANGCHAIN_TRACING_V2 = "false";
+}
+
+/**
  * Kept for backwards compatibility with M1 callers that imported this from
  * the scaffolded stub. Throwing this is no longer the happy path —
  * `runDeepAgentCurator` now delegates to the M2 adapter — but the class is
@@ -238,6 +268,11 @@ export async function runDeepAgentCuratorInternal(
   if (items.length === 0) {
     return { scored: [], metrics: undefined, skipped: [] };
   }
+
+  // DA-Un-08 — apply the opt-in gate BEFORE the adapter pulls @langchain/*.
+  // Scrubbing `LANGSMITH_TRACING` after LangChain's tracer initializes is
+  // too late; doing it here closes the window.
+  applyLangsmithGate(cfg);
 
   const { runAdapterChunk } = await import("./adapter.js");
   const chunks = chunkItems(items as RawItem[], cfg.chunkThreshold);
