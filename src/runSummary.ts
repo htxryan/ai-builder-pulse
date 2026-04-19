@@ -156,6 +156,14 @@ export function renderOrchestratorSummary(r: OrchestratorResult): string {
     lines.push(
       `- **curator cost**: ${fmtUsd(m.estimatedUsd)} (in ${m.inputTokens} / out ${m.outputTokens} tokens)`,
     );
+    if (m.model || m.promptVersion || m.chunkCount !== undefined || m.maxUsd !== undefined) {
+      const parts: string[] = [];
+      if (m.model) parts.push(`model=\`${m.model}\``);
+      if (m.promptVersion) parts.push(`promptVer=\`${m.promptVersion}\``);
+      if (m.chunkCount !== undefined) parts.push(`chunks=${m.chunkCount}`);
+      if (m.maxUsd !== undefined) parts.push(`budget=${fmtUsd(m.maxUsd)}`);
+      lines.push(`- **curator**: ${parts.join(" · ")}`);
+    }
   }
   if (r.curatorMetrics?.costPerSource) {
     lines.push("");

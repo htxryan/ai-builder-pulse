@@ -51,6 +51,10 @@ export interface CurationClient {
     systemPrompt: string;
     rawItems: readonly RawItem[];
   }): Promise<CurationCallResult>;
+  // Optional — identifies the pinned model this client targets. Surfaced
+  // through `CuratorMetrics.model` so the operator job summary can show what
+  // actually ran. Tests with a hand-rolled client may omit it.
+  readonly model?: string;
 }
 
 export interface ClaudeCuratorOptions {
@@ -308,6 +312,10 @@ export class ClaudeCurator implements Curator {
       ...(Object.keys(tokensPerSource).length > 0
         ? { tokensPerSource, costPerSource }
         : {}),
+      ...(this.client.model !== undefined ? { model: this.client.model } : {}),
+      promptVersion: PROMPT_VERSION,
+      chunkCount: chunks.length,
+      maxUsd: this.maxUsd,
     };
     log.info("curator done", {
       totalItems: items.length,

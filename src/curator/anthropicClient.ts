@@ -68,7 +68,9 @@ const DEFAULT_MAX_TOKENS = 16_000;
 
 export class AnthropicCurationClient implements CurationClient {
   private readonly messagesParse: MessagesParseFn;
-  private readonly model: string;
+  // Public so ClaudeCurator can surface the pinned model through
+  // CuratorMetrics.model without reaching into private state.
+  public readonly model: string;
   private readonly maxTokens: number;
   private readonly outputFormatOverride: unknown;
 

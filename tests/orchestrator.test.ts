@@ -499,4 +499,52 @@ describe("runOrchestrator", () => {
     expect(r.reason).toBe("cost_ceiling");
     expect(r.curatorMetrics?.estimatedUsd).toBe(18.0);
   });
+
+  it("injected ClaudeCurator produces complete CuratorMetrics (model/promptVersion/chunkCount/maxUsd)", async () => {
+    const { ClaudeCurator } = await import(
+      "../src/curator/claudeCurator.js"
+    );
+    const { PROMPT_VERSION } = await import("../src/curator/prompt.js");
+    const { CATEGORIES } = await import("../src/types.js");
+    const client = {
+      model: "claude-sonnet-test-model",
+      async call({ rawItems }: { rawItems: readonly RawItem[] }) {
+        return {
+          records: rawItems.map((r) => ({
+            id: r.id,
+            category: CATEGORIES[0],
+            relevanceScore: 0.7,
+            keep: true,
+            description:
+              "A well-formed curation description long enough for zod min length.",
+          })),
+          inputTokens: 100,
+          outputTokens: 50,
+        };
+      },
+    };
+    const curator = new ClaudeCurator({
+      client,
+      chunkThreshold: 5,
+      maxUsd: 0.5,
+    });
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", MIN_SOURCES: "2", MIN_ITEMS_TO_PUBLISH: "1" },
+      fetchAll: fixtureFetch,
+      curator,
+    });
+    expect(r.status).toBe("dry_run");
+    const m = r.curatorMetrics;
+    expect(m).toBeDefined();
+    expect(m?.model).toBe("claude-sonnet-test-model");
+    expect(m?.promptVersion).toBe(PROMPT_VERSION);
+    // 10 fixture items / chunkThreshold 5 = 2 chunks
+    expect(m?.chunkCount).toBe(2);
+    expect(m?.maxUsd).toBe(0.5);
+    expect(m?.inputTokens).toBeGreaterThan(0);
+    expect(m?.outputTokens).toBeGreaterThan(0);
+    expect(m?.estimatedUsd).toBeGreaterThan(0);
+  });
 });

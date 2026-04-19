@@ -36,7 +36,7 @@ import {
   CostCeilingError,
   chunkItems,
 } from "../claudeCurator.js";
-import { PROMPT_VERSION } from "../prompt.js";
+import { MODEL_PIN, PROMPT_VERSION } from "../prompt.js";
 import {
   estimateUsd,
   DEFAULT_INPUT_COST_PER_MTOK,
@@ -403,6 +403,10 @@ export async function runDeepAgentCuratorInternal(
     ...(Object.keys(tokensPerSource).length > 0
       ? { tokensPerSource, costPerSource }
       : {}),
+    model: MODEL_PIN,
+    promptVersion: PROMPT_VERSION,
+    chunkCount: chunks.length,
+    maxUsd: cfg.maxUsd,
   };
 
   log.info("deepagent curator done", {

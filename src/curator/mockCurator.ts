@@ -11,6 +11,13 @@ import type { SkippedItemRecord } from "./deadletter.js";
  * `tokensPerSource` / `costPerSource` are item-count-weighted apportionments
  * of the per-chunk usage — they let an operator see which source is driving
  * curation cost (e.g. "RSS is 70% of today's spend").
+ *
+ * `model` / `promptVersion` / `chunkCount` / `maxUsd` are curator-instance
+ * identifiers (not aggregated from per-call usage). They populate for
+ * curators that own a pinned model + prompt (ClaudeCurator, DeepAgents).
+ * MockCurator leaves them undefined — a scoring mock has no real model.
+ * Injected curators built by callers must populate these themselves for
+ * the run summary to carry them; the orchestrator will not fill them in.
  */
 export interface CuratorMetrics {
   readonly inputTokens: number;
@@ -28,6 +35,13 @@ export interface CuratorMetrics {
   // "who is driving cost" triage.
   readonly tokensPerSource?: Partial<Record<Source, number>>;
   readonly costPerSource?: Partial<Record<Source, number>>;
+  // Curator-instance identifiers (see file comment above). All four are
+  // populated by ClaudeCurator and the DeepAgents curator; MockCurator and
+  // any curator without a real model leaves them undefined.
+  readonly model?: string;
+  readonly promptVersion?: string;
+  readonly chunkCount?: number;
+  readonly maxUsd?: number;
 }
 
 export interface Curator {
