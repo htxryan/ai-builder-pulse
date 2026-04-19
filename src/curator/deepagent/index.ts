@@ -36,7 +36,7 @@ import {
   CostCeilingError,
   chunkItems,
 } from "../claudeCurator.js";
-import { PROMPT_VERSION, resolveCuratorModel } from "../prompt.js";
+import { MODEL_PIN, PROMPT_VERSION, resolveCuratorModel } from "../prompt.js";
 import {
   estimateUsd,
   DEFAULT_INPUT_COST_PER_MTOK,
@@ -150,6 +150,15 @@ export interface DeepAgentConfig {
   readonly inputCostPerMTok: number;
   /** Claude output cost per 1M tokens. */
   readonly outputCostPerMTok: number;
+  /**
+   * Resolved curator model id — `MODEL_PIN` by default, `CURATOR_MODEL_OVERRIDE`
+   * when set. Captured once at config-parse time so the adapter binding and
+   * the `CuratorMetrics.model` field reference the same value even if the env
+   * mutates mid-run. Optional because existing test fixtures build
+   * `DeepAgentConfig` literals by hand; consumers default to `MODEL_PIN` when
+   * unset.
+   */
+  readonly model?: string;
 }
 
 export const DEEPAGENT_DEFAULTS: DeepAgentConfig = {
@@ -163,6 +172,7 @@ export const DEEPAGENT_DEFAULTS: DeepAgentConfig = {
   maxUsd: 1.0,
   inputCostPerMTok: DEFAULT_INPUT_COST_PER_MTOK,
   outputCostPerMTok: DEFAULT_OUTPUT_COST_PER_MTOK,
+  model: MODEL_PIN,
 };
 
 /**
@@ -211,6 +221,7 @@ export function parseDeepAgentConfig(
     ),
     inputCostPerMTok: DEEPAGENT_DEFAULTS.inputCostPerMTok,
     outputCostPerMTok: DEEPAGENT_DEFAULTS.outputCostPerMTok,
+    model: resolveCuratorModel(env),
   };
 }
 
@@ -403,7 +414,7 @@ export async function runDeepAgentCuratorInternal(
     ...(Object.keys(tokensPerSource).length > 0
       ? { tokensPerSource, costPerSource }
       : {}),
-    model: resolveCuratorModel(),
+    model: reportedModel(ctx, cfg),
     promptVersion: PROMPT_VERSION,
     chunkCount: chunks.length,
     maxUsd: cfg.maxUsd,
@@ -423,6 +434,36 @@ export async function runDeepAgentCuratorInternal(
   });
 
   return { scored: allScored, metrics, skipped: allSkipped };
+}
+
+/**
+ * Pick the value to report in `CuratorMetrics.model`. Defaults to the
+ * config-resolved model id (captured once at parse time from `CURATOR_MODEL_OVERRIDE`
+ * or `MODEL_PIN`). When a test injects `ctx.modelOverride`, probe the
+ * `BaseChatModel` for its model id so telemetry matches what actually ran.
+ *
+ * `ctx.modelFactory` is intentionally NOT probed here — tests use it to count
+ * constructor calls for retry/cache assertions, and a probe at metrics time
+ * would corrupt those counters. For the factory case we fall through to
+ * `cfg.model`; that path is test-only, so the fidelity loss is acceptable.
+ */
+function reportedModel(
+  ctx: RunDeepAgentCuratorContext,
+  cfg: DeepAgentConfig,
+): string {
+  if (ctx.modelOverride) {
+    // BaseChatModel subclasses don't share a common field name for the model
+    // id (ChatAnthropic uses `model`; some fakes expose `modelName`). Probe
+    // both; silently fall back to `cfg.model` if neither is a string.
+    const probe = ctx.modelOverride as { model?: unknown; modelName?: unknown };
+    if (typeof probe.model === "string" && probe.model.length > 0) {
+      return probe.model;
+    }
+    if (typeof probe.modelName === "string" && probe.modelName.length > 0) {
+      return probe.modelName;
+    }
+  }
+  return cfg.model ?? MODEL_PIN;
 }
 
 /**
@@ -454,7 +495,7 @@ async function runChunkWithRetry(
       const modelForChunk = factoryModel ?? ctx.modelOverride;
       const overrides: BuildAgentOptions = modelForChunk
         ? { model: modelForChunk }
-        : {};
+        : { modelName: cfg.model ?? MODEL_PIN };
       const result = await runAdapterChunk(
         chunk,
         {

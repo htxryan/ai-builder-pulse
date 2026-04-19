@@ -149,6 +149,14 @@ export interface BuildAgentOptions {
    * without hitting the network.
    */
   readonly model?: BaseChatModel;
+  /**
+   * Pre-resolved model id to bind when `model` is not provided. Callers
+   * (index.ts) resolve this once per run via `resolveCuratorModel(env)` at
+   * config-parse time so the binding and `CuratorMetrics.model` reference
+   * the same value. Defaults to `resolveCuratorModel()` (reads `process.env`)
+   * for direct ad-hoc calls that don't plumb an env map through.
+   */
+  readonly modelName?: string;
   /** Override the system prompt (tests). Defaults to the versioned artifact. */
   readonly systemPrompt?: string;
   /** Override Anthropic `max_tokens`. Ignored when `model` is provided. */
@@ -906,12 +914,13 @@ function resolveModel(opts: BuildAgentOptions): BaseChatModel {
   if (opts.model) return opts.model;
   // ChatAnthropic reads `ANTHROPIC_API_KEY` from env; the factory validates
   // key presence before selecting the DeepAgents backend in production.
-  // `resolveCuratorModel()` honors `CURATOR_MODEL_OVERRIDE` (dev/demo/alt-
-  // provider escape hatch) and otherwise returns the shared `MODEL_PIN`. The
-  // direct-SDK path uses the same helper — override-vs-pin behavior is
-  // identical across backends by construction.
+  // Prefer the caller's pre-resolved `modelName` (threaded from
+  // `parseDeepAgentConfig(env)`) so the binding matches `CuratorMetrics.model`
+  // exactly. Fall back to `resolveCuratorModel()` — which honors
+  // `CURATOR_MODEL_OVERRIDE` and otherwise returns `MODEL_PIN` — for ad-hoc
+  // callers that don't plumb an env map through.
   return new ChatAnthropic({
-    model: resolveCuratorModel(),
+    model: opts.modelName ?? resolveCuratorModel(),
     maxTokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
   });
 }

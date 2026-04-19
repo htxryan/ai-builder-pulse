@@ -23,6 +23,11 @@ export interface AnthropicClientOptions {
   // JSON Schema that avoids the SDK's `zodOutputFormat()` helper, whose
   // `zod/v4` internals crash on this project's Zod v3 schemas.
   readonly outputFormat?: unknown;
+  // Scoped env map. `selectCurator` passes the orchestrator's env here so
+  // `CURATOR_MODEL_OVERRIDE` resolution stays scoped instead of falling
+  // back to the global `process.env`. Defaults to `process.env` for direct
+  // instantiation in tests / ad-hoc callers.
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 // System is passed as a content-block array so we can attach
@@ -74,7 +79,7 @@ export class AnthropicCurationClient implements CurationClient {
   private readonly outputFormatOverride: unknown;
 
   constructor(opts: AnthropicClientOptions = {}) {
-    this.model = opts.model ?? resolveCuratorModel();
+    this.model = opts.model ?? resolveCuratorModel(opts.env);
     this.maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.outputFormatOverride = opts.outputFormat;
     if (opts.messagesParse) {

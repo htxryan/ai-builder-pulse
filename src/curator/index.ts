@@ -36,6 +36,8 @@ export { SYSTEM_PROMPT, PROMPT_VERSION } from "./prompt.js";
 
 import type { Curator } from "./mockCurator.js";
 import { parsePositiveInt, parsePositiveNumber } from "../env.js";
+import { log } from "../log.js";
+import { MODEL_PIN, resolveCuratorModel } from "./prompt.js";
 
 /** Inputs the factory needs beyond the env map — per-run identifiers. */
 export interface SelectCuratorContext {
@@ -71,6 +73,18 @@ export async function selectCurator(
     return new MockCurator();
   }
 
+  // One-shot operator-visible warn when a model override is active. Cost
+  // rates + prompt-cache keys assume the pinned model; the override is a
+  // dev/demo-only escape hatch and operators running it in prod should see
+  // it in the run log before any curator call happens.
+  const resolvedModel = resolveCuratorModel(env);
+  if (resolvedModel !== MODEL_PIN) {
+    log.warn("curator model override active (dev/demo only)", {
+      pinned: MODEL_PIN,
+      override: resolvedModel,
+    });
+  }
+
   const backend = (env.CURATOR_BACKEND ?? "").toLowerCase();
   if (backend === "deepagents") {
     // Opt-in DeepAgents path. Importing this module runs the version-guard
@@ -94,7 +108,7 @@ export async function selectCurator(
     import("./anthropicClient.js"),
   ]);
   return new ClaudeCurator({
-    client: new AnthropicCurationClient(),
+    client: new AnthropicCurationClient({ env }),
     chunkThreshold: parsePositiveInt(
       env.CURATOR_CHUNK_THRESHOLD,
       50,

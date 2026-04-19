@@ -158,6 +158,66 @@ describe("AnthropicCurationClient", () => {
       expect(await captureModel()).toBe("anthropic/claude-sonnet-4.5");
     });
 
+    it("opts.env scopes the override lookup (ignores process.env)", async () => {
+      // process.env has no override; the scoped env map does. The scoped map
+      // must win so a parallel-run caller can isolate config from globals.
+      delete process.env["CURATOR_MODEL_OVERRIDE"];
+      const captured: MessagesParseArgs[] = [];
+      const client = new AnthropicCurationClient({
+        env: { CURATOR_MODEL_OVERRIDE: "scoped-only/model-id" },
+        outputFormat: { type: "stub" },
+        messagesParse: async (args): Promise<MessagesParseResult> => {
+          captured.push(args);
+          return {
+            parsed_output: {
+              items: [
+                {
+                  id: "a",
+                  category: "Tools & Launches",
+                  relevanceScore: 0.5,
+                  keep: true,
+                  description:
+                    "A valid description that meets the minimum-length requirement for Zod parse in curation.",
+                },
+              ],
+            },
+            usage: { input_tokens: 10, output_tokens: 5 },
+          };
+        },
+      });
+      await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
+      expect(captured[0]!.model).toBe("scoped-only/model-id");
+    });
+
+    it("opts.env with no override falls back to MODEL_PIN even when process.env has one", async () => {
+      process.env["CURATOR_MODEL_OVERRIDE"] = "anthropic/claude-sonnet-4.5";
+      const captured: MessagesParseArgs[] = [];
+      const client = new AnthropicCurationClient({
+        env: {}, // scoped map has no override
+        outputFormat: { type: "stub" },
+        messagesParse: async (args): Promise<MessagesParseResult> => {
+          captured.push(args);
+          return {
+            parsed_output: {
+              items: [
+                {
+                  id: "a",
+                  category: "Tools & Launches",
+                  relevanceScore: 0.5,
+                  keep: true,
+                  description:
+                    "A valid description that meets the minimum-length requirement for Zod parse in curation.",
+                },
+              ],
+            },
+            usage: { input_tokens: 10, output_tokens: 5 },
+          };
+        },
+      });
+      await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
+      expect(captured[0]!.model).toBe(MODEL_PIN);
+    });
+
     it("an explicit opts.model still wins over the env override", async () => {
       process.env["CURATOR_MODEL_OVERRIDE"] = "anthropic/claude-sonnet-4.5";
       const captured: MessagesParseArgs[] = [];

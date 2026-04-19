@@ -5,6 +5,7 @@ import {
   DEEPAGENT_DEFAULTS,
   parseDeepAgentConfig,
 } from "../../../src/curator/deepagent/index.js";
+import { MODEL_PIN } from "../../../src/curator/prompt.js";
 
 describe("parseDeepAgentConfig", () => {
   it("returns the documented defaults when no DEEPAGENT_* vars are set", () => {
@@ -92,6 +93,21 @@ describe("parseDeepAgentConfig", () => {
     });
     expect(cfg.chunkThreshold).toBe(25);
     expect(cfg.maxUsd).toBe(0.75);
+  });
+
+  it("captures the resolved curator model id at parse time", () => {
+    // Scoped env → scoped override. `model` is frozen on the config so a
+    // mid-run mutation to process.env can't desynchronize the adapter binding
+    // from CuratorMetrics.model.
+    expect(parseDeepAgentConfig({}).model).toBe(MODEL_PIN);
+    expect(
+      parseDeepAgentConfig({
+        CURATOR_MODEL_OVERRIDE: "anthropic/claude-sonnet-4.5",
+      }).model,
+    ).toBe("anthropic/claude-sonnet-4.5");
+    expect(
+      parseDeepAgentConfig({ CURATOR_MODEL_OVERRIDE: "" }).model,
+    ).toBe(MODEL_PIN);
   });
 
   it("rejects malformed CURATOR_MAX_USD", () => {

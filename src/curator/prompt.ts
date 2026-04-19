@@ -19,13 +19,14 @@ export const MODEL_PIN = "claude-sonnet-4-6";
 // OpenRouter-compatible `ANTHROPIC_BASE_URL`), cost-constrained demos, or
 // A/B-testing a prior model. Production MUST stay on `MODEL_PIN` — the
 // prompt-cache keys and consistency guarantees assume a fixed model id.
-// Both `anthropicClient.ts` and `deepagent/adapter.ts` call this helper at
-// construction time so override-vs-pin behavior is identical across backends.
+// Callers MUST pass their own `env` map when running in a scoped-env context
+// (e.g. `selectCurator`, `parseDeepAgentConfig`); defaulting to `process.env`
+// is a convenience for top-level entry points only.
 export function resolveCuratorModel(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const override = env["CURATOR_MODEL_OVERRIDE"]?.trim();
-  return override && override.length > 0 ? override : MODEL_PIN;
+  return override || MODEL_PIN;
 }
 
 const CATEGORY_DEFINITIONS = {
