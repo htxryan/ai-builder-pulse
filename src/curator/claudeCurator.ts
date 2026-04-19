@@ -8,6 +8,11 @@ import { OrchestratorStageError } from "../errors.js";
 import { log } from "../log.js";
 import type { Curator, CuratorMetrics } from "./mockCurator.js";
 import { SYSTEM_PROMPT, PROMPT_VERSION } from "./prompt.js";
+import {
+  DEFAULT_INPUT_COST_PER_MTOK,
+  DEFAULT_OUTPUT_COST_PER_MTOK,
+  estimateUsd as sharedEstimateUsd,
+} from "./costModel.js";
 import type { RawItem, ScoredItem, Source } from "../types.js";
 import { CategorySchema, ScoredItemSchema } from "../types.js";
 import type { SkippedItemRecord } from "./deadletter.js";
@@ -68,8 +73,6 @@ export interface ClaudeCuratorOptions {
 
 const DEFAULT_CHUNK_THRESHOLD = 50;
 const DEFAULT_MAX_RETRIES = 3;
-const DEFAULT_INPUT_COST = 3.0;
-const DEFAULT_OUTPUT_COST = 15.0;
 const DEFAULT_MAX_USD = 1.0;
 const DEFAULT_MAX_CHUNK_CONCURRENCY = 3;
 
@@ -117,8 +120,9 @@ export class ClaudeCurator implements Curator {
     this.client = opts.client;
     this.chunkThreshold = opts.chunkThreshold ?? DEFAULT_CHUNK_THRESHOLD;
     this.maxRetries = opts.maxRetries ?? DEFAULT_MAX_RETRIES;
-    this.inputCostPerMTok = opts.inputCostPerMTok ?? DEFAULT_INPUT_COST;
-    this.outputCostPerMTok = opts.outputCostPerMTok ?? DEFAULT_OUTPUT_COST;
+    this.inputCostPerMTok = opts.inputCostPerMTok ?? DEFAULT_INPUT_COST_PER_MTOK;
+    this.outputCostPerMTok =
+      opts.outputCostPerMTok ?? DEFAULT_OUTPUT_COST_PER_MTOK;
     this.maxUsd = opts.maxUsd ?? DEFAULT_MAX_USD;
     this.maxChunkConcurrency =
       opts.maxChunkConcurrency ?? DEFAULT_MAX_CHUNK_CONCURRENCY;
@@ -327,12 +331,10 @@ export class ClaudeCurator implements Curator {
   }
 
   private estimateUsd(inputTokens: number, outputTokens: number): number {
-    return Number(
-      (
-        (inputTokens / 1_000_000) * this.inputCostPerMTok +
-        (outputTokens / 1_000_000) * this.outputCostPerMTok
-      ).toFixed(4),
-    );
+    return sharedEstimateUsd(inputTokens, outputTokens, {
+      inputCostPerMTok: this.inputCostPerMTok,
+      outputCostPerMTok: this.outputCostPerMTok,
+    });
   }
 
   private async callWithRetry(

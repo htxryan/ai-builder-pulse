@@ -1,13 +1,23 @@
 // DeepAgents curator — public surface (DC2a).
 //
-// M2 wires `runDeepAgentCurator` to the LangGraph + @langchain/anthropic
-// adapter. The public surface (function signature + `DeepAgentCurator`
-// class) is the "low volatility" contract per advisor P1-8; the LangChain
+// M2 wired `runDeepAgentCurator` to the LangGraph + @langchain/anthropic
+// adapter. M3 adds the safety-net orchestration around it: chunking, the
+// chunk-retry loop, per-run cost aggregation, and `CuratorMetrics`
+// population. The public surface (function signature + `DeepAgentCurator`
+// class) is the "low volatility" contract per advisor P1-8; LangChain
 // churn is contained in `./adapter.ts`.
 //
 // Invariants in force here:
 //   - Version guard (DA-Un-05) runs at module init — importing this file
 //     asserts the pinned versions before any curator call can happen.
+//   - DA-U-11 / DA-E-06 : cost ceiling — per-chunk ceiling is passed to the
+//                         adapter; per-run ceiling is re-checked after all
+//                         chunks aggregate. `CostCeilingError` is NOT
+//                         retried in either path.
+//   - DA-U-12 / DA-E-05 : chunk retry — transient failures (LangGraph
+//                         recursion errors, schema/count drift) retry up
+//                         to `maxChunkRetries` before surfacing. The retry
+//                         whitelist explicitly EXCLUDES `CostCeilingError`.
 //   - No side effects beyond the version check.
 //
 // This file intentionally imports `./adapter.ts` lazily (inside
@@ -19,9 +29,20 @@
 
 import type { Curator, CuratorMetrics } from "../mockCurator.js";
 import type { SkippedItemRecord } from "../deadletter.js";
-import type { RawItem, ScoredItem } from "../../types.js";
-import { parseBoolFlag, parsePositiveInt } from "../../env.js";
-import type { BuildAgentOptions } from "./adapter.js";
+import type { RawItem, ScoredItem, Source } from "../../types.js";
+import { parseBoolFlag, parsePositiveInt, parsePositiveNumber } from "../../env.js";
+import { log } from "../../log.js";
+import {
+  CostCeilingError,
+  chunkItems,
+} from "../claudeCurator.js";
+import { PROMPT_VERSION } from "../prompt.js";
+import {
+  estimateUsd,
+  DEFAULT_INPUT_COST_PER_MTOK,
+  DEFAULT_OUTPUT_COST_PER_MTOK,
+} from "../costModel.js";
+import type { BuildAgentOptions, ChunkUsage } from "./adapter.js";
 import {
   assertPinnedVersions,
   VersionDriftError,
@@ -73,6 +94,14 @@ export interface DeepAgentConfig {
   readonly enableLangsmith: boolean;
   /** DA-O-01 — write per-chunk JSONL audit trace. */
   readonly auditToFile: boolean;
+  /** Chunk size for curation batches. Shared default with legacy curator. */
+  readonly chunkThreshold: number;
+  /** DA-U-11 — per-run USD ceiling. Per-chunk is `maxUsd / chunkCount * 2`. */
+  readonly maxUsd: number;
+  /** Claude input cost per 1M tokens. */
+  readonly inputCostPerMTok: number;
+  /** Claude output cost per 1M tokens. */
+  readonly outputCostPerMTok: number;
 }
 
 export const DEEPAGENT_DEFAULTS: DeepAgentConfig = {
@@ -82,11 +111,19 @@ export const DEEPAGENT_DEFAULTS: DeepAgentConfig = {
   maxConcurrentChunks: 1,
   enableLangsmith: false,
   auditToFile: false,
+  chunkThreshold: 50,
+  maxUsd: 1.0,
+  inputCostPerMTok: DEFAULT_INPUT_COST_PER_MTOK,
+  outputCostPerMTok: DEFAULT_OUTPUT_COST_PER_MTOK,
 };
 
 /**
  * Parse DEEPAGENT_* env vars into a validated config. Throws on malformed
  * values so an operator typo can't silently bypass a safety limit.
+ *
+ * `chunkThreshold` and `maxUsd` share the `CURATOR_CHUNK_THRESHOLD` /
+ * `CURATOR_MAX_USD` env vars with the legacy ClaudeCurator path — an
+ * operator's existing runbooks keep working when they flip the backend.
  */
 export function parseDeepAgentConfig(
   env: NodeJS.ProcessEnv = process.env,
@@ -114,6 +151,18 @@ export function parseDeepAgentConfig(
     ),
     enableLangsmith: parseBoolFlag(env.DEEPAGENT_ENABLE_LANGSMITH),
     auditToFile: parseBoolFlag(env.DEEPAGENT_AUDIT_TO_FILE),
+    chunkThreshold: parsePositiveInt(
+      env.CURATOR_CHUNK_THRESHOLD,
+      DEEPAGENT_DEFAULTS.chunkThreshold,
+      "CURATOR_CHUNK_THRESHOLD",
+    ),
+    maxUsd: parsePositiveNumber(
+      env.CURATOR_MAX_USD,
+      DEEPAGENT_DEFAULTS.maxUsd,
+      "CURATOR_MAX_USD",
+    ),
+    inputCostPerMTok: DEEPAGENT_DEFAULTS.inputCostPerMTok,
+    outputCostPerMTok: DEEPAGENT_DEFAULTS.outputCostPerMTok,
   };
 }
 
@@ -129,53 +178,272 @@ export interface RunDeepAgentCuratorContext {
    * accidentally pass an arbitrary object past the type checker.
    */
   readonly modelOverride?: BuildAgentOptions["model"];
+  /**
+   * Tests may inject a factory that returns a *fresh* model per chunk —
+   * needed for the multi-chunk cache-preservation test where each chunk
+   * consumes a different queued response. Production ignores this.
+   */
+  readonly modelFactory?: (chunkIdx: number) => BuildAgentOptions["model"];
+}
+
+/**
+ * Decide whether a caught error is safe to retry. DA-E-06 is explicit that
+ * `CostCeilingError` is NEVER retried — retrying a cost overrun just burns
+ * more budget on the same regression. Everything else is treated as
+ * transient (LangGraph recursion-limit, zod drift, count-invariant flutter)
+ * and eligible for the next attempt, modulo `maxChunkRetries`.
+ */
+function isRetryableChunkError(err: unknown): boolean {
+  if (err instanceof CostCeilingError) return false;
+  return true;
 }
 
 /**
  * Public API (DC2a) — stable across LangChain churn. Internals live in
- * `./adapter.ts`. The dynamic import keeps the LangChain module graph
- * out of the factory's fast path; `selectCurator` already gates this
- * module behind `CURATOR_BACKEND=deepagents`, so the extra indirection is
- * cheap.
+ * `./adapter.ts` + this module's chunk/retry driver. The dynamic import
+ * keeps the LangChain module graph out of the factory's fast path;
+ * `selectCurator` already gates this module behind
+ * `CURATOR_BACKEND=deepagents`, so the extra indirection is cheap.
+ *
+ * Returns only the merged `ScoredItem[]` — the stable M2 public surface.
+ * `DeepAgentCurator.curate()` uses the sibling `runDeepAgentCuratorInternal`
+ * to access the per-run `CuratorMetrics` for `lastMetrics()`.
  */
 export async function runDeepAgentCurator(
   items: readonly RawItem[],
   ctx: RunDeepAgentCuratorContext,
 ): Promise<ScoredItem[]> {
+  const { scored } = await runDeepAgentCuratorInternal(items, ctx);
+  return scored;
+}
+
+/**
+ * Internal variant that additionally returns `CuratorMetrics`. Kept non-
+ * exported from the public surface (re-exported only to the
+ * `DeepAgentCurator` class and the M3 test file) so external callers stay
+ * on the stable `ScoredItem[]` signature.
+ */
+export async function runDeepAgentCuratorInternal(
+  items: readonly RawItem[],
+  ctx: RunDeepAgentCuratorContext,
+): Promise<{ scored: ScoredItem[]; metrics: CuratorMetrics | undefined }> {
   const cfg = ctx.config ?? DEEPAGENT_DEFAULTS;
-  const { runAdapter } = await import("./adapter.js");
-  return runAdapter(
-    items,
-    {
-      runId: ctx.runId,
-      runDate: ctx.runDate,
-      maxIterations: cfg.maxIterations,
-    },
-    // Test-injection escape hatch. `modelOverride` is typed as
-    // `BuildAgentOptions["model"]` (BaseChatModel) so the adapter sees a
-    // properly-typed value; in prod this stays undefined.
-    ctx.modelOverride
-      ? { model: ctx.modelOverride }
-      : {},
-  );
+  if (items.length === 0) {
+    return { scored: [], metrics: undefined };
+  }
+
+  const { runAdapterChunk } = await import("./adapter.js");
+  const chunks = chunkItems(items as RawItem[], cfg.chunkThreshold);
+  // Per-chunk budget share × 2 — mirrors ClaudeCurator so the same
+  // operator-facing CURATOR_MAX_USD knob behaves identically across backends.
+  const perChunkCeilingUsd = (cfg.maxUsd / chunks.length) * 2;
+  const costRates = {
+    inputCostPerMTok: cfg.inputCostPerMTok,
+    outputCostPerMTok: cfg.outputCostPerMTok,
+  };
+
+  log.info("deepagent curator start", {
+    runId: ctx.runId,
+    runDate: ctx.runDate,
+    totalItems: items.length,
+    chunkCount: chunks.length,
+    chunkThreshold: cfg.chunkThreshold,
+    maxUsd: cfg.maxUsd,
+    perChunkCeilingUsd: Number(perChunkCeilingUsd.toFixed(4)),
+    maxChunkRetries: cfg.maxChunkRetries,
+    promptVersion: PROMPT_VERSION,
+  });
+
+  // Per-source apportionment. Same approximation as ClaudeCurator: weight
+  // per-chunk usage by the item-count fraction each source contributed.
+  const inputTokensPerSource: Partial<Record<Source, number>> = {};
+  const outputTokensPerSource: Partial<Record<Source, number>> = {};
+
+  let totalInput = 0;
+  let totalOutput = 0;
+  let totalCacheRead = 0;
+  let totalCacheCreation = 0;
+  const allScored: ScoredItem[] = [];
+
+  // DA-O-02: default maxConcurrentChunks=1 for M3 — prompt caching prefers
+  // sequential chunks (cache creates on chunk 0, reads on chunks 1..N).
+  // Running chunks in parallel would multi-create the same cache prefix and
+  // defeat DA-U-09. M4 can revisit once tool calls make the per-chunk
+  // latency dominant over cache-creation cost.
+  for (let i = 0; i < chunks.length; i += 1) {
+    const chunk = chunks[i]!;
+    const chunkIdx = i;
+    const { scored, usage } = await runChunkWithRetry(
+      chunk,
+      chunkIdx,
+      cfg,
+      ctx,
+      perChunkCeilingUsd,
+      costRates,
+      runAdapterChunk,
+    );
+
+    totalInput += usage.inputTokens;
+    totalOutput += usage.outputTokens;
+    totalCacheRead += usage.cacheReadInputTokens;
+    totalCacheCreation += usage.cacheCreationInputTokens;
+
+    // Apportion per-source.
+    const srcCounts: Partial<Record<Source, number>> = {};
+    for (const item of chunk) {
+      srcCounts[item.source] = (srcCounts[item.source] ?? 0) + 1;
+    }
+    for (const [src, count] of Object.entries(srcCounts) as [
+      Source,
+      number,
+    ][]) {
+      const share = count / chunk.length;
+      inputTokensPerSource[src] =
+        (inputTokensPerSource[src] ?? 0) + usage.inputTokens * share;
+      outputTokensPerSource[src] =
+        (outputTokensPerSource[src] ?? 0) + usage.outputTokens * share;
+    }
+
+    allScored.push(...scored);
+  }
+
+  // DA-U-11 — per-run cost re-check. The per-chunk ceiling (maxUsd/n*2) is a
+  // 2× buffer; a sum of chunks each at 1.5× their share still exceeds the
+  // run budget and must fail loudly even though no single chunk tripped.
+  const totalEstUsd = estimateUsd(totalInput, totalOutput, costRates);
+  if (totalEstUsd > cfg.maxUsd) {
+    log.error("deepagent cost ceiling exceeded (total)", {
+      estimatedUsd: totalEstUsd,
+      maxUsd: cfg.maxUsd,
+    });
+    throw new CostCeilingError(totalEstUsd, cfg.maxUsd, "total");
+  }
+
+  const tokensPerSource: Partial<Record<Source, number>> = {};
+  const costPerSource: Partial<Record<Source, number>> = {};
+  for (const src of Object.keys(inputTokensPerSource) as Source[]) {
+    const inTok = inputTokensPerSource[src] ?? 0;
+    const outTok = outputTokensPerSource[src] ?? 0;
+    tokensPerSource[src] = Math.round(inTok + outTok);
+    costPerSource[src] = estimateUsd(inTok, outTok, costRates);
+  }
+
+  const sawCacheTelemetry = totalCacheRead > 0 || totalCacheCreation > 0;
+  const metrics: CuratorMetrics = {
+    inputTokens: totalInput,
+    outputTokens: totalOutput,
+    estimatedUsd: totalEstUsd,
+    ...(sawCacheTelemetry
+      ? {
+          cacheReadInputTokens: totalCacheRead,
+          cacheCreationInputTokens: totalCacheCreation,
+        }
+      : {}),
+    ...(Object.keys(tokensPerSource).length > 0
+      ? { tokensPerSource, costPerSource }
+      : {}),
+  };
+
+  log.info("deepagent curator done", {
+    runId: ctx.runId,
+    totalItems: items.length,
+    chunkCount: chunks.length,
+    inputTokens: totalInput,
+    outputTokens: totalOutput,
+    cacheReadInputTokens: sawCacheTelemetry ? totalCacheRead : undefined,
+    cacheCreationInputTokens: sawCacheTelemetry ? totalCacheCreation : undefined,
+    estimatedUsd: totalEstUsd,
+    maxUsd: cfg.maxUsd,
+    promptVersion: PROMPT_VERSION,
+  });
+
+  return { scored: allScored, metrics };
+}
+
+/**
+ * DA-E-05 / DA-U-12 — retry a single chunk up to `maxChunkRetries` times.
+ * `CostCeilingError` short-circuits the loop (never retried); every other
+ * thrown error is treated as transient and re-attempted until the budget
+ * is exhausted. The final surfaced error is the last attempt's error —
+ * preserving the orchestrator's existing "what failed last" log surface.
+ */
+async function runChunkWithRetry(
+  chunk: readonly RawItem[],
+  chunkIdx: number,
+  cfg: DeepAgentConfig,
+  ctx: RunDeepAgentCuratorContext,
+  perChunkCeilingUsd: number,
+  costRates: { inputCostPerMTok: number; outputCostPerMTok: number },
+  runAdapterChunk: (typeof import("./adapter.js"))["runAdapterChunk"],
+): Promise<{ scored: readonly ScoredItem[]; usage: ChunkUsage }> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= cfg.maxChunkRetries; attempt += 1) {
+    try {
+      const factoryModel = ctx.modelFactory
+        ? ctx.modelFactory(chunkIdx)
+        : undefined;
+      const modelForChunk = factoryModel ?? ctx.modelOverride;
+      const overrides: BuildAgentOptions = modelForChunk
+        ? { model: modelForChunk }
+        : {};
+      const result = await runAdapterChunk(
+        chunk,
+        {
+          runId: ctx.runId,
+          runDate: ctx.runDate,
+          chunkIdx,
+          maxIterations: cfg.maxIterations,
+          perChunkCeilingUsd,
+          costRates,
+        },
+        overrides,
+      );
+      return { scored: result.scored, usage: result.usage };
+    } catch (err) {
+      if (!isRetryableChunkError(err)) throw err;
+      lastErr = err;
+      log.warn("deepagent chunk attempt failed", {
+        chunkIdx,
+        attempt,
+        maxChunkRetries: cfg.maxChunkRetries,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      if (attempt >= cfg.maxChunkRetries) break;
+    }
+  }
+  log.error("deepagent chunk exhausted retries (DA-E-05)", {
+    chunkIdx,
+    attempts: cfg.maxChunkRetries,
+  });
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(`deepagent chunk ${chunkIdx} failed after retries`);
 }
 
 /**
  * Thin class wrapper so the curator factory can hand back an object
- * satisfying the `Curator` interface. `lastMetrics` / `lastSkipped` are
- * wired in M3/M4; in M2 they return the empty defaults.
+ * satisfying the `Curator` interface. M3 populates `lastMetrics` /
+ * `lastSkipped`; `lastSkipped` returns empty until M4 wires the merge-time
+ * deadletter.
  */
 export class DeepAgentCurator implements Curator {
+  private _lastMetrics: CuratorMetrics | undefined;
+
   constructor(
     private readonly runCtx: RunDeepAgentCuratorContext,
   ) {}
 
   async curate(items: RawItem[]): Promise<ScoredItem[]> {
-    return runDeepAgentCurator(items, this.runCtx);
+    const { scored, metrics } = await runDeepAgentCuratorInternal(
+      items,
+      this.runCtx,
+    );
+    this._lastMetrics = metrics;
+    return scored;
   }
 
   lastMetrics(): CuratorMetrics | undefined {
-    return undefined;
+    return this._lastMetrics;
   }
 
   lastSkipped(): readonly SkippedItemRecord[] {

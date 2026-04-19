@@ -1,8 +1,13 @@
-// M2 — LangGraph + Anthropic + Zod structured-output binding.
+// M2/M3 — LangGraph + Anthropic + Zod structured-output binding with the
+// M3 safety-net invariants (cost ceiling, retry, prompt cache).
 //
 // This is the "deep module" (per advisor P1-7): LangGraph graph compile,
 // DeepAgents harness integration, tool guard, and audit all live here.
-// M2 ships the zero-tool classifier path; tools + audit + guard land in M4.
+// M2 shipped the zero-tool classifier path; M3 adds:
+//   - Anthropic prompt-cache middleware (DA-U-09)
+//   - Per-chunk usage extraction from @langchain/anthropic usage_metadata
+//   - `CostCeilingError` surfacing (DA-U-11, DA-E-06)
+// Tools + audit + guard land in M4.
 //
 // DA-U-08 compliance: we deliberately route through `createAgent` from
 // `langchain` (the primitive DeepAgents itself uses under the hood) rather
@@ -19,14 +24,21 @@
 //   - DA-U-03 / DA-E-02      : E-05 count-invariant: exactly one record per
 //                              RawItem, no extras, no drops.
 //   - DA-S-01                : LangGraph `recursionLimit` at invocation.
-// DA-U-09 (cache preservation) is landed in M3; M2 uses a plain string
-// system prompt so the cache_control wiring can be added + tested in one
-// focused change.
+//   - DA-U-09                : Anthropic prompt-caching middleware is wired.
+//                              `minMessagesToCache: 1` because the classifier
+//                              path has exactly one human message per chunk;
+//                              the default 3 would silently disable caching.
+//   - DA-U-11 / DA-E-06      : Per-chunk `CostCeilingError` threshold is
+//                              checked the moment usage lands from the model;
+//                              the error is thrown from the adapter with
+//                              `retryable: false` so the orchestrator's
+//                              stage-scoped catcher treats it as fatal.
 
 import {
   createAgent,
   providerStrategy,
   HumanMessage,
+  anthropicPromptCachingMiddleware,
   type ProviderStrategy,
   type ReactAgent,
 } from "langchain";
@@ -39,10 +51,15 @@ import { OrchestratorStageError } from "../../errors.js";
 import type { RawItem, ScoredItem } from "../../types.js";
 import { ScoredItemSchema } from "../../types.js";
 import {
+  CostCeilingError,
   CountInvariantError,
   CurationResponseSchema,
   type CurationRecord,
 } from "../claudeCurator.js";
+import {
+  estimateUsd,
+  type CostRates,
+} from "../costModel.js";
 import {
   MODEL_PIN,
   SYSTEM_PROMPT,
@@ -83,6 +100,16 @@ export interface AdapterContext {
   readonly chunkIdx?: number;
   /** DA-S-01 — LangGraph recursion limit for this chunk. */
   readonly maxIterations?: number;
+  /**
+   * DA-U-11 — per-chunk cost ceiling in USD. When set, the adapter throws
+   * `CostCeilingError` with `retryable: false` if the model's reported usage
+   * translates to a USD cost above this value. Undefined ⇒ no per-chunk
+   * ceiling (legacy M2 behavior). The orchestrator computes this as
+   * `CURATOR_MAX_USD / chunkCount * 2`.
+   */
+  readonly perChunkCeilingUsd?: number;
+  /** Cost rates override (defaults from costModel.ts). */
+  readonly costRates?: CostRates;
 }
 
 export interface BuildAgentOptions {
@@ -97,6 +124,13 @@ export interface BuildAgentOptions {
   readonly systemPrompt?: string;
   /** Override Anthropic `max_tokens`. Ignored when `model` is provided. */
   readonly maxTokens?: number;
+  /**
+   * Disable the Anthropic prompt-caching middleware. Production leaves this
+   * false; the sole consumer is the adapter test that wants to inspect the
+   * unfiltered graph. The prod path MUST ship with caching enabled or DA-U-09
+   * silently regresses (2-4× token burn).
+   */
+  readonly disableCaching?: boolean;
 }
 
 // Loose type alias — the ReactAgent's full type parameter bag leaks
@@ -105,6 +139,31 @@ export interface BuildAgentOptions {
 // return type intentionally opaque to prevent type churn from spilling into
 // index.ts.
 export type CurationAgent = ReactAgent;
+
+/**
+ * Per-chunk usage accounting surfaced to the caller so index.ts can check
+ * the per-run cost ceiling and populate `CuratorMetrics.cacheReadInputTokens`.
+ *
+ * Token counts are read from `@langchain/anthropic`'s `usage_metadata`.
+ * NOTE: that field's `input_tokens` is the *sum* of real + cache_read +
+ * cache_creation tokens (per LangChain's `buildUsageMetadata`). We expose
+ * both the summed figure and the raw split so cost estimation can stay
+ * consistent with the direct-SDK path (which uses raw `input_tokens` without
+ * cache tokens mixed in).
+ */
+export interface ChunkUsage {
+  /** Real input tokens only (excludes cache read + cache creation). */
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadInputTokens: number;
+  readonly cacheCreationInputTokens: number;
+}
+
+export interface ChunkResult {
+  readonly scored: readonly ScoredItem[];
+  readonly usage: ChunkUsage;
+  readonly estimatedUsd: number;
+}
 
 function resolveModel(opts: BuildAgentOptions): BaseChatModel {
   if (opts.model) return opts.model;
@@ -126,19 +185,52 @@ function resolveModel(opts: BuildAgentOptions): BaseChatModel {
  * model's native JSON-schema output path; the returned `structuredResponse`
  * is JSON-schema-valid (and further re-validated with Zod on return to
  * catch any drift in LangChain's schema translation).
+ *
+ * M3: `anthropicPromptCachingMiddleware` is wired by default with
+ * `minMessagesToCache: 1` because the classifier path sends exactly one
+ * user message per chunk; the library default (3) would silently disable
+ * caching. `unsupportedModelBehavior: "ignore"` is chosen so tests using
+ * `fakeModel()` don't log a stderr warning on every invocation.
  */
 export function buildCurationAgent(
   opts: BuildAgentOptions = {},
 ): CurationAgent {
   const model = resolveModel(opts);
   const systemPrompt = opts.systemPrompt ?? SYSTEM_PROMPT;
+  const middleware = opts.disableCaching
+    ? []
+    : [buildCachingMiddleware()];
   return createAgent({
     model,
     tools: [],
     systemPrompt,
     responseFormat: buildResponseFormat(),
-    middleware: [],
+    middleware,
   });
+}
+
+// Build the Anthropic prompt-caching middleware (DA-U-09). Isolated in its
+// own function because `PromptCachingMiddlewareConfig` resolves to `never`
+// under `InferInteropZodInput<typeof contextSchema>` in some zod-v3/v4
+// interop paths, and TS narrows the parameter to `undefined`. We route
+// around that by letting inference pick up the `as const` shape — the
+// call site here never forms a `PromptCachingMiddlewareConfig` value
+// explicitly. Documented as a single localized workaround: if this fails
+// after a LangChain upgrade, swap to a named typed variable.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildCachingMiddleware(): any {
+  return anthropicPromptCachingMiddleware(
+    // `satisfies` is intentionally omitted — the compiler's inferred shape
+    // for the param is `undefined` (known upstream type-bundling issue),
+    // so we pass a plain object literal and let TS infer parameter `any`
+    // through the enclosing function's return type.
+    {
+      minMessagesToCache: 1,
+      ttl: "5m",
+      unsupportedModelBehavior: "ignore",
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any,
+  );
 }
 
 // External type-boundary cast: `providerStrategy` is typed against
@@ -220,9 +312,68 @@ function mergeToScoredItems(
 }
 
 /**
+ * Pull LangChain usage metadata off the last AI message in the agent
+ * result. The structured-output path does NOT surface usage on
+ * `result.structuredResponse`, so we walk `result.messages` back-to-front
+ * and grab the first AI message that carries `usage_metadata`.
+ *
+ * LangChain's `buildUsageMetadata` sums `cache_read_input_tokens` and
+ * `cache_creation_input_tokens` into `input_tokens`; we subtract them back
+ * out so the returned `inputTokens` matches what the direct-SDK path
+ * reports (the `messages.parse` helper returns cache tokens separately).
+ */
+interface UsageBearingMessage {
+  readonly usage_metadata?: {
+    readonly input_tokens?: number;
+    readonly output_tokens?: number;
+    readonly input_token_details?: {
+      readonly cache_read?: number;
+      readonly cache_creation?: number;
+    };
+  };
+}
+
+function extractUsage(result: unknown): ChunkUsage {
+  const messages: readonly UsageBearingMessage[] =
+    typeof result === "object" &&
+    result !== null &&
+    "messages" in result &&
+    Array.isArray((result as { messages: readonly UsageBearingMessage[] }).messages)
+      ? (result as { messages: readonly UsageBearingMessage[] }).messages
+      : [];
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    const um = m?.usage_metadata;
+    if (um && (um.input_tokens !== undefined || um.output_tokens !== undefined)) {
+      const cacheRead = um.input_token_details?.cache_read ?? 0;
+      const cacheCreation = um.input_token_details?.cache_creation ?? 0;
+      const summedInput = um.input_tokens ?? 0;
+      // LangChain sums cache_read + cache_creation into input_tokens. The
+      // direct-SDK path reports these separately, so subtract them back out
+      // to keep cost estimates apples-to-apples across backends. Floor at 0
+      // because an older @langchain/anthropic that doesn't sum them would
+      // otherwise produce a negative count.
+      const rawInput = Math.max(0, summedInput - cacheRead - cacheCreation);
+      return {
+        inputTokens: rawInput,
+        outputTokens: um.output_tokens ?? 0,
+        cacheReadInputTokens: cacheRead,
+        cacheCreationInputTokens: cacheCreation,
+      };
+    }
+  }
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadInputTokens: 0,
+    cacheCreationInputTokens: 0,
+  };
+}
+
+/**
  * Run a single curation chunk through the DeepAgents-backed adapter. M2
- * ships the single-chunk path; per-run chunking, cost ceiling, retries,
- * and cache preservation land in M3, and tools + audit in M4.
+ * shipped the single-chunk path; M3 adds usage extraction + per-chunk
+ * cost ceiling. Per-run aggregation and retry land in `index.ts`.
  *
  * Throws:
  *   - `CountInvariantError` when the agent's record count differs from
@@ -230,17 +381,30 @@ function mergeToScoredItems(
  *   - `UnexpectedRecordIdError` (also `OrchestratorStageError`) when the
  *     count matches but a record id is unknown or duplicated (E-05 sibling
  *     — the response still fails to map bijectively to the input).
+ *   - `CostCeilingError` (DA-E-06) when the chunk's estimated USD exceeds
+ *     `ctx.perChunkCeilingUsd`. Not retryable.
  *   - a plain `Error` when the structured response is present but fails
  *     the `CurationResponseSchema` re-validation (LangChain's JSON-schema
  *     path and our Zod schema must agree; a drift here is a programmer
  *     error, not a runtime condition to retry).
  */
-export async function runAdapter(
+export async function runAdapterChunk(
   items: readonly RawItem[],
   ctx: AdapterContext,
   overrides: BuildAgentOptions = {},
-): Promise<ScoredItem[]> {
-  if (items.length === 0) return [];
+): Promise<ChunkResult> {
+  if (items.length === 0) {
+    return {
+      scored: [],
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      },
+      estimatedUsd: 0,
+    };
+  }
 
   const agent = buildCurationAgent(overrides);
   const maxIterations = ctx.maxIterations ?? DEFAULT_MAX_ITERATIONS;
@@ -251,6 +415,7 @@ export async function runAdapter(
     itemCount: items.length,
     promptVersion: PROMPT_VERSION,
     maxIterations,
+    perChunkCeilingUsd: ctx.perChunkCeilingUsd,
   });
 
   const userMessage = new HumanMessage(formatItemsPayload(items));
@@ -258,6 +423,33 @@ export async function runAdapter(
     { messages: [userMessage] },
     { recursionLimit: maxIterations },
   );
+
+  const usage = extractUsage(result);
+  const chunkUsd = estimateUsd(
+    usage.inputTokens,
+    usage.outputTokens,
+    ctx.costRates,
+  );
+
+  // DA-E-06 — cost ceiling check before merge. Throwing here means we do
+  // NOT return a partial result; the caller's retry loop sees
+  // CostCeilingError (retryable: false) and abandons the chunk.
+  if (
+    ctx.perChunkCeilingUsd !== undefined &&
+    chunkUsd > ctx.perChunkCeilingUsd
+  ) {
+    log.error("deepagent cost ceiling exceeded (chunk)", {
+      chunkIdx: ctx.chunkIdx ?? 0,
+      estimatedUsd: chunkUsd,
+      perChunkCeilingUsd: Number(ctx.perChunkCeilingUsd.toFixed(4)),
+    });
+    throw new CostCeilingError(
+      chunkUsd,
+      ctx.perChunkCeilingUsd,
+      "chunk",
+      ctx.chunkIdx,
+    );
+  }
 
   // Distinguish "LangChain dropped the key entirely" (API shape changed)
   // from "key is present but the JSON fails our Zod schema" (model drift).
@@ -292,6 +484,26 @@ export async function runAdapter(
     chunkIdx: ctx.chunkIdx ?? 0,
     itemCount: items.length,
     kept: scored.filter((s) => s.keep).length,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadInputTokens: usage.cacheReadInputTokens,
+    cacheCreationInputTokens: usage.cacheCreationInputTokens,
+    estimatedUsd: chunkUsd,
   });
-  return scored;
+  return { scored, usage, estimatedUsd: chunkUsd };
+}
+
+/**
+ * Back-compat shim — pre-M3 tests import `runAdapter` and expect the
+ * bare `ScoredItem[]` return. Keep this signature stable until the legacy
+ * sunset so the adapter.test.ts suite doesn't churn; new code should call
+ * `runAdapterChunk` directly.
+ */
+export async function runAdapter(
+  items: readonly RawItem[],
+  ctx: AdapterContext,
+  overrides: BuildAgentOptions = {},
+): Promise<ScoredItem[]> {
+  const { scored } = await runAdapterChunk(items, ctx, overrides);
+  return [...scored];
 }

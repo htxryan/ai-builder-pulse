@@ -83,6 +83,26 @@ describe("parseDeepAgentConfig", () => {
     expect(cfg.enableLangsmith).toBe(false);
   });
 
+  it("shares CURATOR_CHUNK_THRESHOLD and CURATOR_MAX_USD with the legacy path", () => {
+    // M3 reuses the same env vars as ClaudeCurator so an operator's
+    // existing runbook works when they flip CURATOR_BACKEND.
+    const cfg = parseDeepAgentConfig({
+      CURATOR_CHUNK_THRESHOLD: "25",
+      CURATOR_MAX_USD: "0.75",
+    });
+    expect(cfg.chunkThreshold).toBe(25);
+    expect(cfg.maxUsd).toBe(0.75);
+  });
+
+  it("rejects malformed CURATOR_MAX_USD", () => {
+    expect(() =>
+      parseDeepAgentConfig({ CURATOR_MAX_USD: "NaN" }),
+    ).toThrow(/Invalid env CURATOR_MAX_USD/);
+    expect(() =>
+      parseDeepAgentConfig({ CURATOR_MAX_USD: "0" }),
+    ).toThrow(/Invalid env CURATOR_MAX_USD/);
+  });
+
   it("audit-to-file is off by default and gated by DEEPAGENT_AUDIT_TO_FILE=1", () => {
     expect(parseDeepAgentConfig({}).auditToFile).toBe(false);
     expect(
