@@ -407,6 +407,8 @@ async function runChunkWithRetry(
           maxIterations: cfg.maxIterations,
           perChunkCeilingUsd,
           costRates,
+          toolBudget: cfg.toolBudget,
+          auditToFile: cfg.auditToFile,
         },
         overrides,
       );

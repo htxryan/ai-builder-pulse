@@ -185,19 +185,41 @@ describe("DeepAgent adapter — structured output", () => {
 });
 
 describe("DeepAgent adapter — graph construction (DA-U-04)", () => {
-  it("registers zero tools on the compiled agent", () => {
+  it("registers zero tools when no toolContext is provided", () => {
     const model = fakeModel();
     const agent = buildCurationAgent({ model });
-    // The ReactAgent persists its construction options; DA-U-04 requires
-    // `tools: []`. We introspect the options object so a future refactor
-    // that accidentally adds a default tool (e.g. by routing through
-    // `createDeepAgent`) is caught here — not in production when an
-    // injected `write_todos` inflates tool-call budget.
+    // Without a chunk context we cannot build an allowlist, so tools are
+    // intentionally absent — this path is reserved for structural tests and
+    // the empty `runAdapter([])` short-circuit. The prod path always supplies
+    // `toolContext` via `runAdapterChunk`.
     const opts = (agent as unknown as { options?: { tools?: unknown[] } })
       .options;
     expect(opts).toBeDefined();
     expect(Array.isArray(opts!.tools)).toBe(true);
     expect(opts!.tools!.length).toBe(0);
+  });
+
+  it("registers exactly the two starter tools when toolContext is provided (DA-U-04)", () => {
+    const model = fakeModel();
+    const items = Array.from({ length: 2 }, (_, i) => rawItem(i));
+    const agent = buildCurationAgent({
+      model,
+      toolContext: {
+        chunk: items,
+        runId: "rid",
+        runDate: "2026-04-19",
+        chunkIdx: 0,
+      },
+    });
+    const opts = (agent as unknown as {
+      options?: { tools?: { name?: string }[] };
+    }).options;
+    expect(opts).toBeDefined();
+    expect(Array.isArray(opts!.tools)).toBe(true);
+    expect(opts!.tools!.length).toBe(2);
+    const names = (opts!.tools ?? []).map((t) => t.name);
+    expect(names).toContain("fetchUrlStatus");
+    expect(names).toContain("readRawItem");
   });
 
   it("exposes a compiled LangGraph `graph` (M3/M4 hook)", () => {

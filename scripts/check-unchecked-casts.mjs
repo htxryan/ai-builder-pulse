@@ -32,8 +32,11 @@ const PATTERNS = [/\bas unknown\b/, /@ts-ignore\b/, /@ts-nocheck\b/];
 //      `description?: string` (implicit-optional). With
 //      `exactOptionalPropertyTypes: true` the two do not unify. Runtime
 //      is correct; the cast is documented inline at the call site.
+//   3-4. Two `as unknown as InteropZodObject` on the M4 tool schemas
+//      (fetchUrlStatus, readRawItem) — same root cause as #2. The `tool()`
+//      factory's schema parameter resolves to the same `ZodV3Like` bound.
 // Any additional occurrence fails CI.
-const BASELINE = 2;
+const BASELINE = 4;
 
 function walk(dir) {
   const out = [];
