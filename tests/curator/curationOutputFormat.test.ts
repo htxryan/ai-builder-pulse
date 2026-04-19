@@ -32,20 +32,51 @@ describe("curationOutputFormat — JSON Schema matches CurationRecordSchema", ()
     expect(CurationRecordSchema.shape.id.safeParse("x").success).toBe(true);
   });
 
-  it("relevanceScore numeric bounds match Zod .min(0).max(1)", () => {
+  it("relevanceScore has NO minimum/maximum on JSON Schema (Anthropic rejects them); Zod still enforces [0,1]", () => {
+    // Regression guard. Anthropic's structured-output validator rejects
+    // minimum/maximum on number-typed properties with
+    //   "For 'number' type, properties maximum, minimum are not supported".
+    // The first live production run on 2026-04-19 hit a 400 on every chunk
+    // because these were present. A future cleanup refactor could easily
+    // re-add them from CurationRecordSchema — this test catches that.
     const props = getItemProps();
-    expect(props.relevanceScore!.minimum).toBe(
-      CURATION_SCHEMA_CONSTRAINTS.relevanceScoreMin,
-    );
-    expect(props.relevanceScore!.maximum).toBe(
-      CURATION_SCHEMA_CONSTRAINTS.relevanceScoreMax,
-    );
+    expect(props.relevanceScore!.type).toBe("number");
+    expect(props.relevanceScore).not.toHaveProperty("minimum");
+    expect(props.relevanceScore).not.toHaveProperty("maximum");
+    // Zod remains the enforcement point for the [0,1] range.
     expect(CurationRecordSchema.shape.relevanceScore.safeParse(-0.01).success).toBe(
       false,
     );
     expect(CurationRecordSchema.shape.relevanceScore.safeParse(1.01).success).toBe(
       false,
     );
+    expect(CurationRecordSchema.shape.relevanceScore.safeParse(0).success).toBe(
+      true,
+    );
+    expect(CurationRecordSchema.shape.relevanceScore.safeParse(1).success).toBe(
+      true,
+    );
+  });
+
+  it("no number-typed property anywhere in the JSON Schema has minimum/maximum", () => {
+    // Generalization of the regression guard above: walk the entire schema
+    // tree and assert that every {type:"number"} node lacks min/max. Covers
+    // any future numeric field that might be added.
+    const fmt = curationOutputFormat();
+    const violations: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      if (node === null || typeof node !== "object") return;
+      const obj = node as Record<string, unknown>;
+      if (obj.type === "number") {
+        if ("minimum" in obj) violations.push(`${path}.minimum`);
+        if ("maximum" in obj) violations.push(`${path}.maximum`);
+      }
+      for (const [k, v] of Object.entries(obj)) {
+        walk(v, path === "" ? k : `${path}.${k}`);
+      }
+    };
+    walk(fmt.schema, "");
+    expect(violations).toEqual([]);
   });
 
   it("description.minLength / maxLength match Zod .min(1).max(600)", () => {
@@ -87,6 +118,63 @@ describe("curationOutputFormat — JSON Schema matches CurationRecordSchema", ()
     const b = curationOutputFormat();
     expect(a).toBe(b);
     expect(Object.isFrozen(a)).toBe(true);
+  });
+});
+
+describe("curationOutputFormat — Anthropic validator stub (integration)", () => {
+  // Mimics the subset of Anthropic's structured-output schema validator that
+  // bit us on 2026-04-19: reject `minimum` / `maximum` on number-typed
+  // nodes. String-length constraints (`minLength` / `maxLength`) ARE
+  // supported and must pass through. End-to-end guard that the real
+  // `curationOutputFormat()` output would not be 400'd by the API.
+  function anthropicValidate(schema: unknown): string[] {
+    const errors: string[] = [];
+    const walk = (node: unknown, path: string): void => {
+      if (node === null || typeof node !== "object") return;
+      const obj = node as Record<string, unknown>;
+      if (obj.type === "number") {
+        const unsupported = ["minimum", "maximum"].filter((k) => k in obj);
+        if (unsupported.length > 0) {
+          errors.push(
+            `${path || "<root>"}: For 'number' type, properties ${unsupported.join(", ")} are not supported`,
+          );
+        }
+      }
+      for (const [k, v] of Object.entries(obj)) {
+        walk(v, path === "" ? k : `${path}.${k}`);
+      }
+    };
+    walk(schema, "");
+    return errors;
+  }
+
+  it("control: stub fails a schema that includes minimum/maximum on a number", () => {
+    const bad = {
+      type: "object",
+      properties: {
+        score: { type: "number", minimum: 0, maximum: 1 },
+      },
+    };
+    const errors = anthropicValidate(bad);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0]).toMatch(
+      /For 'number' type, properties .* are not supported/,
+    );
+  });
+
+  it("control: stub accepts minLength/maxLength on a string", () => {
+    const ok = {
+      type: "object",
+      properties: {
+        name: { type: "string", minLength: 1, maxLength: 10 },
+      },
+    };
+    expect(anthropicValidate(ok)).toEqual([]);
+  });
+
+  it("real curationOutputFormat() schema passes the Anthropic stub validator", () => {
+    const fmt = curationOutputFormat();
+    expect(anthropicValidate(fmt.schema)).toEqual([]);
   });
 });
 

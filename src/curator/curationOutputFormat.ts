@@ -22,14 +22,17 @@ export interface CurationOutputFormat {
   parse(content: string): CurationResponse;
 }
 
-// Numeric/length constraints duplicated from CurationRecordSchema. Exported
+// String-length constraints duplicated from CurationRecordSchema. Exported
 // so a unit test can assert the JSON Schema on the wire matches the Zod
 // source of truth — see tests/curator/curationOutputFormat.test.ts. If you
 // edit CurationRecordSchema, update these too (the test will fail loudly).
+//
+// Note: numeric min/max for relevanceScore are intentionally NOT mirrored
+// here. Anthropic's structured-output validator rejects minimum/maximum on
+// number types — see the comment on `relevanceScore` below. Zod enforces
+// the [0.0, 1.0] range post-parse.
 export const CURATION_SCHEMA_CONSTRAINTS = {
   idMinLength: 1,
-  relevanceScoreMin: 0,
-  relevanceScoreMax: 1,
   descriptionMinLength: 1,
   descriptionMaxLength: 600,
 } as const;
