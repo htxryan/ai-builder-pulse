@@ -58,13 +58,20 @@ assertPinnedVersions();
 /**
  * DA-Un-08 / DA-O-03 — LangSmith opt-in gate.
  *
+ * LangChain's `isTracingEnabled()` (see `@langchain/core/utils/callbacks`) ORs
+ * four env vars: `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING_V2`,
+ * `LANGSMITH_TRACING`, `LANGCHAIN_TRACING`. All four must be handled or the
+ * gate is trivially bypassable.
+ *
  * Rules:
  *   - `enableLangsmith=true` → emit an operator-visible ::warning:: making the
- *     data-egress explicit, then return. Tracing wires via LangChain's native
- *     auto-detection of `LANGSMITH_TRACING` / `LANGSMITH_API_KEY`.
- *   - `enableLangsmith=false` → scrub `LANGSMITH_TRACING` + `LANGCHAIN_TRACING_V2`
- *     to `"false"` so the presence of `LANGSMITH_API_KEY` alone cannot
- *     auto-activate cloud tracing. Silent by design.
+ *     data-egress explicit, then set `LANGSMITH_TRACING=true` +
+ *     `LANGCHAIN_TRACING_V2=true` so the single opt-in flag activates tracing
+ *     without a separate operator action. If `LANGSMITH_API_KEY` is missing,
+ *     warn again — LangChain will silently no-op uploads otherwise.
+ *   - `enableLangsmith=false` → force all four tracing flags to `"false"` so
+ *     the presence of `LANGSMITH_API_KEY` alone cannot auto-activate cloud
+ *     tracing. Silent by design.
  *
  * Mutates the supplied `env` object so the scrub takes effect before the
  * adapter imports `@langchain/*`. Callers pass `process.env` in production;
@@ -79,9 +86,19 @@ export function applyLangsmithGate(
       "LangSmith tracing enabled — pre-publication content sent to LangSmith cloud",
       { optIn: "DEEPAGENT_ENABLE_LANGSMITH=1" },
     );
+    env.LANGSMITH_TRACING = "true";
+    env.LANGCHAIN_TRACING_V2 = "true";
+    if (!env.LANGSMITH_API_KEY) {
+      log.warn(
+        "LangSmith opt-in requested but LANGSMITH_API_KEY is unset — tracing will no-op",
+        { optIn: "DEEPAGENT_ENABLE_LANGSMITH=1" },
+      );
+    }
     return;
   }
   env.LANGSMITH_TRACING = "false";
+  env.LANGSMITH_TRACING_V2 = "false";
+  env.LANGCHAIN_TRACING = "false";
   env.LANGCHAIN_TRACING_V2 = "false";
 }
 

@@ -30,7 +30,7 @@
 //   17  DEEPAGENT_ENABLE_LANGSMITH=0 + LANGSMITH_API_KEY set → no tracing/warning
 //   18  DEEPAGENT_ENABLE_LANGSMITH=1 → tracing wires, ::warning:: emitted
 //   19  Audit log filename with runId avoids same-day retry collision
-//   20  DEEPAGENT_MAX_CONCURRENT_CHUNKS=2 → cost ceiling aggregated
+//   20  Per-run cost aggregation fires regardless of concurrency setting
 //   21  Tool-guard ↔ C4 normalizer parity at scale (100 URL fixtures)
 //   22  Cost-ceiling timing — per-chunk check fires before subsequent chunks
 //   23  Retry cascade — surfaces "retries exhausted", not "version drift"
@@ -503,19 +503,35 @@ describe("Scenario 16 — URL normalizer parity across 10 variants (DC7, DA-U-10
 });
 
 describe("Scenario 17 — LANGSMITH_API_KEY alone does NOT enable tracing (DA-Un-08)", () => {
-  it("enableLangsmith=false leaves LANGSMITH_API_KEY intact but scrubs LANGSMITH_TRACING", async () => {
+  it("enableLangsmith=false leaves LANGSMITH_API_KEY intact and scrubs all four LangChain tracing flags", async () => {
     const env: NodeJS.ProcessEnv = {
       LANGSMITH_API_KEY: "ls_secret",
       LANGSMITH_PROJECT: "demo",
     };
     const { log } = await import("../../../src/log.js");
     const warnSpy = vi.spyOn(log, "warn");
+    // Snapshot process.env keys the gate might touch; the detached env above
+    // must NOT leak mutations to the ambient process — regression guard.
+    const before = {
+      LANGSMITH_TRACING: process.env.LANGSMITH_TRACING,
+      LANGSMITH_TRACING_V2: process.env.LANGSMITH_TRACING_V2,
+      LANGCHAIN_TRACING: process.env.LANGCHAIN_TRACING,
+      LANGCHAIN_TRACING_V2: process.env.LANGCHAIN_TRACING_V2,
+    };
     applyLangsmithGate({ enableLangsmith: false }, env);
+    // All four flags LangChain's isTracingEnabled() checks must be forced off.
     expect(env.LANGSMITH_TRACING).toBe("false");
+    expect(env.LANGSMITH_TRACING_V2).toBe("false");
+    expect(env.LANGCHAIN_TRACING).toBe("false");
     expect(env.LANGCHAIN_TRACING_V2).toBe("false");
     // Key not removed (operator may have set it for other tools), but the
-    // tracing flag is forced off so LangChain's auto-wire cannot fire.
+    // tracing flags are forced off so LangChain's auto-wire cannot fire.
     expect(env.LANGSMITH_API_KEY).toBe("ls_secret");
+    // Detached env must not leak to process.env.
+    expect(process.env.LANGSMITH_TRACING).toBe(before.LANGSMITH_TRACING);
+    expect(process.env.LANGSMITH_TRACING_V2).toBe(before.LANGSMITH_TRACING_V2);
+    expect(process.env.LANGCHAIN_TRACING).toBe(before.LANGCHAIN_TRACING);
+    expect(process.env.LANGCHAIN_TRACING_V2).toBe(before.LANGCHAIN_TRACING_V2);
     // No warning on the silent path.
     const emitted = warnSpy.mock.calls.filter((c) =>
       String(c[0]).includes("LangSmith"),
@@ -534,20 +550,33 @@ describe("Scenario 17 — LANGSMITH_API_KEY alone does NOT enable tracing (DA-Un
 });
 
 describe("Scenario 18 — DEEPAGENT_ENABLE_LANGSMITH=1 wires tracing and emits warning", () => {
-  it("emits a ::warning:: and does NOT scrub LANGSMITH_TRACING", async () => {
+  it("sets tracing flags and emits a ::warning::", async () => {
+    // No LANGSMITH_TRACING pre-set — the gate itself must activate tracing so
+    // the single opt-in flag works without a second operator action.
     const env: NodeJS.ProcessEnv = {
       LANGSMITH_API_KEY: "ls_secret",
-      LANGSMITH_TRACING: "true",
     };
     const { log } = await import("../../../src/log.js");
     const warnSpy = vi.spyOn(log, "warn");
     applyLangsmithGate({ enableLangsmith: true }, env);
-    // Opt-in path must not force-off the tracing flag.
     expect(env.LANGSMITH_TRACING).toBe("true");
+    expect(env.LANGCHAIN_TRACING_V2).toBe("true");
     const msgs = warnSpy.mock.calls.map((c) => String(c[0]));
     expect(msgs.some((m) => /LangSmith tracing enabled/.test(m))).toBe(true);
     expect(
       msgs.some((m) => /pre-publication content sent to LangSmith cloud/.test(m)),
+    ).toBe(true);
+    warnSpy.mockRestore();
+  });
+
+  it("warns when opt-in is requested but LANGSMITH_API_KEY is missing", async () => {
+    const env: NodeJS.ProcessEnv = {};
+    const { log } = await import("../../../src/log.js");
+    const warnSpy = vi.spyOn(log, "warn");
+    applyLangsmithGate({ enableLangsmith: true }, env);
+    const msgs = warnSpy.mock.calls.map((c) => String(c[0]));
+    expect(
+      msgs.some((m) => /LANGSMITH_API_KEY is unset/.test(m)),
     ).toBe(true);
     warnSpy.mockRestore();
   });
@@ -601,11 +630,13 @@ describe("Scenario 19 — audit filename embeds runId to avoid same-day retry co
   });
 });
 
-describe("Scenario 20 — maxConcurrentChunks=2 respects per-run cost aggregation", () => {
-  it("per-run ceiling still fires when cumulative cost exceeds maxUsd", async () => {
-    // The current adapter runs chunks serially (DA-O-02 default for M3),
-    // but the per-run aggregation is independent of concurrency — summed
-    // chunk cost must trip `maxUsd` even if each individual chunk passes.
+describe("Scenario 20 — per-run cost aggregation fires regardless of concurrency setting", () => {
+  it("per-run ceiling fires when cumulative cost exceeds maxUsd (serial execution)", async () => {
+    // DA-O-02 runs chunks serially in M3 — `maxConcurrentChunks` is accepted
+    // but not yet honored. This scenario therefore tests the ORTHOGONAL
+    // guarantee: per-run aggregation must trip `maxUsd` regardless of how
+    // chunks are dispatched. True concurrency coverage is pending DA-O-02's
+    // parallel-dispatch landing.
     const items = Array.from({ length: 8 }, (_, i) => rawItem(i));
     const usage = { realInputTokens: 100_000, outputTokens: 0 };
     const factory = (idx: number): BaseChatModel =>
@@ -620,7 +651,6 @@ describe("Scenario 20 — maxConcurrentChunks=2 respects per-run cost aggregatio
         config: baseCfg({
           chunkThreshold: 2,
           maxUsd: 1.0,
-          maxConcurrentChunks: 2,
         }),
         modelFactory: factory,
       }),
@@ -754,22 +784,28 @@ describe("Scenario 23 — retry cascade surfaces last error, not 'version drift'
 // ────────────────── End-to-end: applyLangsmithGate wired into the curator run
 
 describe("applyLangsmithGate end-to-end wiring", () => {
-  let originalTracing: string | undefined;
-  let originalV2: string | undefined;
+  const keys = [
+    "LANGSMITH_TRACING",
+    "LANGSMITH_TRACING_V2",
+    "LANGCHAIN_TRACING",
+    "LANGCHAIN_TRACING_V2",
+  ] as const;
+  const originals: Partial<Record<(typeof keys)[number], string | undefined>> = {};
   beforeEach(() => {
-    originalTracing = process.env.LANGSMITH_TRACING;
-    originalV2 = process.env.LANGCHAIN_TRACING_V2;
-    delete process.env.LANGSMITH_TRACING;
-    delete process.env.LANGCHAIN_TRACING_V2;
+    for (const k of keys) {
+      originals[k] = process.env[k];
+      delete process.env[k];
+    }
   });
   afterEach(() => {
-    if (originalTracing === undefined) delete process.env.LANGSMITH_TRACING;
-    else process.env.LANGSMITH_TRACING = originalTracing;
-    if (originalV2 === undefined) delete process.env.LANGCHAIN_TRACING_V2;
-    else process.env.LANGCHAIN_TRACING_V2 = originalV2;
+    for (const k of keys) {
+      const v = originals[k];
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   });
 
-  it("runDeepAgentCuratorInternal scrubs tracing env when enableLangsmith=false", async () => {
+  it("runDeepAgentCuratorInternal scrubs all four LangChain tracing flags when enableLangsmith=false", async () => {
     const items = [rawItem(0)];
     const model = makeModel(
       { items: makeRecords(items) },
@@ -782,6 +818,8 @@ describe("applyLangsmithGate end-to-end wiring", () => {
       modelOverride: model,
     });
     expect(process.env.LANGSMITH_TRACING).toBe("false");
+    expect(process.env.LANGSMITH_TRACING_V2).toBe("false");
+    expect(process.env.LANGCHAIN_TRACING).toBe("false");
     expect(process.env.LANGCHAIN_TRACING_V2).toBe("false");
   });
 });
