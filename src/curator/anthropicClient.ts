@@ -4,13 +4,13 @@
 // merging, and the E-05 count invariant.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { RawItem } from "../types.js";
 import {
   CurationResponseSchema,
   type CurationCallResult,
   type CurationClient,
 } from "./claudeCurator.js";
+import { curationOutputFormat } from "./curationOutputFormat.js";
 import { MODEL_PIN, formatItemsPayload } from "./prompt.js";
 
 export interface AnthropicClientOptions {
@@ -19,10 +19,9 @@ export interface AnthropicClientOptions {
   readonly maxTokens?: number;
   // Exposed for tests; wraps the single SDK call we make.
   readonly messagesParse?: MessagesParseFn;
-  // Test-only escape hatch: the SDK's zodOutputFormat helper runs against
-  // zod v4 internals but our project schemas are zod v3 — the call works
-  // at runtime (the prod SDK bundles its own zod) but throws when invoked
-  // inside the vitest process. Tests pass a stub format to avoid the call.
+  // Override for tests. Prod uses `curationOutputFormat()` — a hand-authored
+  // JSON Schema that avoids the SDK's `zodOutputFormat()` helper, whose
+  // `zod/v4` internals crash on this project's Zod v3 schemas.
   readonly outputFormat?: unknown;
 }
 
@@ -101,8 +100,7 @@ export class AnthropicCurationClient implements CurationClient {
     rawItems: readonly RawItem[];
   }): Promise<CurationCallResult> {
     const userContent = formatItemsPayload(args.rawItems);
-    const format =
-      this.outputFormatOverride ?? zodOutputFormat(CurationResponseSchema);
+    const format = this.outputFormatOverride ?? curationOutputFormat();
     const result = await this.messagesParse({
       model: this.model,
       max_tokens: this.maxTokens,

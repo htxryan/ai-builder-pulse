@@ -982,9 +982,11 @@ function buildCachingMiddleware(): any {
 // `InteropZodType<T>` whose `ZodV3Like` branch expects `description?: string`
 // (implicit-optional). Zod v3's ZodSchema declares `description: string | undefined`
 // (explicit-union), and with `exactOptionalPropertyTypes: true` the two are
-// not assignable. The runtime schema is exactly what providerStrategy needs
-// — the same schema already round-trips successfully through
-// `@anthropic-ai/sdk/helpers/zod.zodOutputFormat` elsewhere in this module.
+// not assignable. The runtime schema is exactly what providerStrategy needs;
+// LangChain's @langchain/anthropic provider handles Zod v3 schemas through
+// its own converter (distinct from the SDK's zodOutputFormat, which is
+// Zod-v4-only and is bypassed in the direct-SDK path — see
+// `src/curator/curationOutputFormat.ts`).
 // Narrowing via `InteropZodType<z.infer<...>>` at the call site keeps the
 // output type precise (no `unknown` leak into the rest of the adapter).
 function buildResponseFormat(): ProviderStrategy<
