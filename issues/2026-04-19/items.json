@@ -1,0 +1,1620 @@
+{
+  "runDate": "2026-04-19",
+  "publishId": "em_54zg9kjaxk8cna5bngpkv0kzfc",
+  "publishedAt": "2026-04-19T21:29:11.716Z",
+  "itemCount": {
+    "total": 85,
+    "kept": 23
+  },
+  "sourceSummary": {
+    "hn": {
+      "count": 940,
+      "status": "ok",
+      "keptCount": 33
+    },
+    "github-trending": {
+      "count": 24,
+      "status": "ok",
+      "keptCount": 24
+    },
+    "reddit": {
+      "count": 25,
+      "status": "ok",
+      "keptCount": 25
+    },
+    "rss": {
+      "count": 3,
+      "status": "ok",
+      "keptCount": 3
+    },
+    "twitter": {
+      "count": 0,
+      "status": "skipped",
+      "error": "ENABLE_TWITTER not set",
+      "keptCount": 0
+    }
+  },
+  "items": [
+    {
+      "id": "hn-47827736",
+      "source": "hn",
+      "title": "Independent bookstores make quiet comeback as big chains dominate retail",
+      "url": "https://www.theguardian.com/business/2026/apr/19/independent-bookstores-comeback",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:19:51.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "mykowebhn"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Independent bookstores gain ground against retail chains — not directly relevant to AI engineering workflows or tools."
+    },
+    {
+      "id": "hn-47827724",
+      "source": "hn",
+      "title": "Why every security awareness training has false positives",
+      "url": "https://kindssecurity.com/blog/why-every-phishing-simulator-has-false-positives-except-one",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:17:40.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "paulwalkerSEC"
+      },
+      "category": "Infrastructure & Deployment",
+      "relevanceScore": 0.25,
+      "keep": false,
+      "description": "Security awareness training discussion on phishing simulators — tangential to AI builders; more about enterprise security posture management."
+    },
+    {
+      "id": "hn-47827718",
+      "source": "hn",
+      "title": "Duolingo's CEO Backtracks Due to Backlash Over Performance Reviews",
+      "url": "https://www.entrepreneur.com/business-news/duolingos-ceo-changing-how-he-measures-employee-performance-backlash",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:17:03.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "gpi"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Duolingo CEO walks back performance review policy — corporate management news with no AI engineering connection."
+    },
+    {
+      "id": "hn-47827694",
+      "source": "hn",
+      "title": "We beat Google's zero-knowledge proof of quantum cryptanalysis",
+      "url": "https://blog.trailofbits.com/2026/04/17/we-beat-googles-zero-knowledge-proof-of-quantum-cryptanalysis/",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:12:58.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "rayhaanj"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.4,
+      "keep": false,
+      "description": "Trail of Bits describes beating Google zero-knowledge proof in quantum cryptanalysis — interesting cryptography work but not actionable for most AI builders today."
+    },
+    {
+      "id": "hn-47827689",
+      "source": "hn",
+      "title": "What's Your Favourite Amiga Games?",
+      "url": "https://old.reddit.com/r/amiga/comments/1spxiu8/whats_your_favourite_amiga_games/",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:12:28.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "doener"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Reddit thread on favorite Amiga games — nostalgia post with zero AI engineering relevance."
+    },
+    {
+      "id": "hn-47827682",
+      "source": "hn",
+      "title": "The demand for local AI could shape a new business model for Apple",
+      "url": "https://9to5mac.com/2026/04/19/apple-local-ai-server-hosting-new-business-model/",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:10:57.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "omer_k"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.65,
+      "keep": true,
+      "description": "Apple may pivot to local AI and on-device server hosting as a new business model — important signal about edge inference strategy and model deployment trends."
+    },
+    {
+      "id": "hn-47827676",
+      "source": "hn",
+      "title": "MLX vs. CoreML on Apple Silicon: A Practical Guide to Picking the Right Back End",
+      "url": "https://blog.ivan.digital/mlx-vs-coreml-on-apple-silicon-a-practical-guide-to-picking-the-right-backend-and-why-you-should-f77ddea7b27a",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:10:04.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "ipotapov"
+      },
+      "category": "Infrastructure & Deployment",
+      "relevanceScore": 0.75,
+      "keep": true,
+      "description": "Practical guide comparing MLX and CoreML on Apple Silicon for ML inference — directly useful for builders deploying models on Mac hardware."
+    },
+    {
+      "id": "hn-47827672",
+      "source": "hn",
+      "title": "Tearing down a car telematic unit (and finding an accident on Facebook)",
+      "url": "https://blog.quarkslab.com/tearing-down-a-car-telematic-unit-and-finding-an-accident-on-facebook.html",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:09:42.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "breve"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "Reverse engineering a car telematics unit — hardware security teardown with minimal AI engineering overlap."
+    },
+    {
+      "id": "hn-47827668",
+      "source": "hn",
+      "title": "A Free and Open Source Orbital Flight Computer",
+      "url": "https://gitlab.com/supernovalabs/pan-solar-nav",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:09:17.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 1,
+        "author": "supernovalabs"
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.15,
+      "keep": false,
+      "description": "Open source orbital flight computer project — niche aerospace tool not broadly applicable to AI workflows."
+    },
+    {
+      "id": "hn-47827631",
+      "source": "hn",
+      "title": "The fastest way to match characters on ARM processors?",
+      "url": "https://lemire.me/blog/2026/04/19/the-fastest-way-to-match-characters-on-arm-processors/",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:03:51.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "mfiguiere"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.3,
+      "keep": false,
+      "description": "Character matching optimization on ARM processors — low-level performance work relevant to inference but too specific for general AI newsletter."
+    },
+    {
+      "id": "hn-47827615",
+      "source": "hn",
+      "title": "How Music Works [video]",
+      "url": "https://www.youtube.com/watch?v=zbfKFa-reBE",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:01:45.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "gmays"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Video explaining how music works — educational content unrelated to AI development."
+    },
+    {
+      "id": "hn-47827611",
+      "source": "hn",
+      "title": "Context.ai seemingly cause of Vercel breach",
+      "url": "https://twitter.com/jaimeblascob/status/2045960143209152981",
+      "score": 2,
+      "publishedAt": "2026-04-19T21:01:37.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 0,
+        "author": "bearsyankees"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.6,
+      "keep": true,
+      "description": "Context.ai reportedly involved in Vercel security breach — notable incident for builders using context-aware AI tools and deployment platforms."
+    },
+    {
+      "id": "hn-47827609",
+      "source": "hn",
+      "title": "EFF pushes back on Google data scandal response: 'Google screwed up'",
+      "url": "https://www.androidauthority.com/eff-pushes-back-on-google-exception-claim-3658264/",
+      "score": 2,
+      "publishedAt": "2026-04-19T21:01:34.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 0,
+        "author": "donohoe"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.5,
+      "keep": true,
+      "description": "EFF criticizes Google over data scandal response — privacy and data governance issue relevant to AI product builders handling user data."
+    },
+    {
+      "id": "hn-47827606",
+      "source": "hn",
+      "title": "OpenMythos – open-source Mythos alternative",
+      "url": "https://github.com/kyegomez/OpenMythos",
+      "score": 1,
+      "publishedAt": "2026-04-19T21:01:07.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "orixilus"
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.4,
+      "keep": false,
+      "description": "Open-source alternative to Mythos — unclear what Mythos is; likely low-signal without more context."
+    },
+    {
+      "id": "hn-47827603",
+      "source": "hn",
+      "title": "C++26: Reflection, Memory Safety, Contracts, and a New Async Model",
+      "url": "https://www.infoq.com/news/2026/04/cpp-26-reflection-safety-async/",
+      "score": 3,
+      "publishedAt": "2026-04-19T21:00:49.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 0,
+        "author": "birdculture"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.45,
+      "keep": false,
+      "description": "C++26 adds reflection, memory safety, contracts, and new async model — language evolution relevant to systems builders but not AI-specific."
+    },
+    {
+      "id": "hn-47827590",
+      "source": "hn",
+      "title": "You're About to See a Lot of Critical Software Updates. Don't Ignore Them",
+      "url": "https://www.wsj.com/tech/personal-tech/anthropic-mythos-security-software-updates-573cc9b3",
+      "score": 2,
+      "publishedAt": "2026-04-19T20:59:13.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 1,
+        "author": "fortran77"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.55,
+      "keep": true,
+      "description": "Wave of critical software updates expected following Anthropic Mythos security incident — builders should patch dependencies and watch for supply chain issues."
+    },
+    {
+      "id": "hn-47827575",
+      "source": "hn",
+      "title": "'Meow, meow': Pilots scolded after animal noises heard on air traffic radio",
+      "url": "https://abcnews.com/US/meow-meow-pilots-scolded-after-animal-noises-heard/story?id=132076661",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:56:41.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 1,
+        "author": "osnium123"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0,
+      "keep": false,
+      "description": "Pilots disciplined for making animal noises on air traffic radio — humorous news with no engineering relevance."
+    },
+    {
+      "id": "hn-47827561",
+      "source": "hn",
+      "title": "BeagleConnect Zepto – A \"$1 Computer\" Based on TI MSPM0L1117 Cortex-M0 MCU",
+      "url": "https://www.cnx-software.com/2026/04/19/beagleconnect-zepto-a-1-computer-based-on-ti-mspm0l1117-cortex-m0-mcu/",
+      "score": 1,
+      "publishedAt": "2026-04-19T20:55:38.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "HardwareLust"
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "One-dollar computer based on ARM Cortex-M0 MCU — interesting hardware but not directly applicable to AI workflows."
+    },
+    {
+      "id": "hn-47827534",
+      "source": "hn",
+      "title": "Satoshi Nakamoto: 'The best outcome is that no one ever finds out'",
+      "url": "https://english.elpais.com/economy-and-business/2026-04-19/satoshi-nakamoto-the-reclusive-billionaire-behind-bitcoin-the-best-outcome-is-that-no-one-ever-finds-out.html",
+      "score": 2,
+      "publishedAt": "2026-04-19T20:52:29.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 0,
+        "author": "geox"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Satoshi Nakamoto interview on Bitcoin anonymity — cryptocurrency founder profile with no AI engineering angle."
+    },
+    {
+      "id": "hn-47827524",
+      "source": "hn",
+      "title": "Are developers burning out faster than ever? (survey)\"",
+      "url": "https://docs.google.com/forms/d/e/1FAIpQLSdu-1Sa6oPvhDtFtBuKEgeQ-xIUMTjGdtfRwVLJGibhJUAmOg/viewform",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:51:35.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 1,
+        "author": "rechargedaily"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.3,
+      "keep": false,
+      "description": "Survey on developer burnout rates — general developer wellness question, not AI-specific enough for newsletter."
+    },
+    {
+      "id": "hn-47827507",
+      "source": "hn",
+      "title": "The Invisible Migration from Nation-States to Stateless Nations",
+      "url": "https://medium.com/discourse/the-invisible-migration-from-nation-states-to-stateless-nations-687beac13f65",
+      "score": 2,
+      "publishedAt": "2026-04-19T20:48:54.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 0,
+        "author": "simonebrunozzi"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Essay on migration from nation-states to stateless nations — political theory unrelated to AI tooling."
+    },
+    {
+      "id": "hn-47827503",
+      "source": "hn",
+      "title": "Sardine Scam or Delicious Novelty?",
+      "url": "https://ecency.com/hive-150329/@leaky20/sardine-scam-or-delicious-novelty",
+      "score": 2,
+      "publishedAt": "2026-04-19T20:48:05.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 1,
+        "author": "randycupertino"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0,
+      "keep": false,
+      "description": "Blog post debating sardine can quality — food commentary with zero engineering connection."
+    },
+    {
+      "id": "hn-47827497",
+      "source": "hn",
+      "title": "The State of Streaming Codecs 2026",
+      "url": "https://www.streamingmedia.com/Articles/ReadArticle.aspx?ArticleID=173838",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:47:06.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 0,
+        "author": "breve"
+      },
+      "category": "Infrastructure & Deployment",
+      "relevanceScore": 0.25,
+      "keep": false,
+      "description": "State of streaming codecs in 2026 — video encoding survey relevant to multimedia AI but too broad for this audience."
+    },
+    {
+      "id": "hn-47827484",
+      "source": "hn",
+      "title": "Louisiana Advances One of the Country's 'Cruelest' Anti-Homeless Bills",
+      "url": "https://www.commondreams.org/news/louisiana-homeless-bill",
+      "score": 4,
+      "publishedAt": "2026-04-19T20:44:07.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 4,
+        "numComments": 0,
+        "author": "MiguelX413"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0,
+      "keep": false,
+      "description": "Louisiana anti-homeless legislation advances — policy news unrelated to AI development."
+    },
+    {
+      "id": "hn-47827450",
+      "source": "hn",
+      "title": "RustNet – A cross-platform network monitoring tool",
+      "url": "https://github.com/domcyrus/rustnet",
+      "score": 1,
+      "publishedAt": "2026-04-19T20:36:55.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 1,
+        "numComments": 0,
+        "author": "martinlofgren"
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "Cross-platform network monitoring tool written in Rust — general devops utility not AI-focused."
+    },
+    {
+      "id": "hn-47827449",
+      "source": "hn",
+      "title": "What's that \"structured\" in Structured Concurrency?",
+      "url": "https://macguru.dev/whats-that-structured-in-structured-concurrency/",
+      "score": 2,
+      "publishedAt": "2026-04-19T20:36:33.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 0,
+        "author": "ingve"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.3,
+      "keep": false,
+      "description": "Explanation of structured concurrency in programming — useful concurrency pattern but not AI-specific enough."
+    },
+    {
+      "id": "hn-47827443",
+      "source": "hn",
+      "title": "Nevada police may be tracking your phone's location without a warrant",
+      "url": "https://apnews.com/article/nevada-police-fog-data-cellphone-location-tracking-ab6f7d75864cf0bfb949f0c6770f3b44",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:35:38.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 0,
+        "author": "breve"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.15,
+      "keep": false,
+      "description": "Nevada police tracking phone location without warrants — privacy and surveillance issue with minimal AI engineering angle."
+    },
+    {
+      "id": "hn-47827424",
+      "source": "hn",
+      "title": "Islamic Medicine (2018)",
+      "url": "https://hekint.org/2018/11/19/islamic-medicine/",
+      "score": 6,
+      "publishedAt": "2026-04-19T20:32:52.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 6,
+        "numComments": 0,
+        "author": "debo_"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0,
+      "keep": false,
+      "description": "Historical overview of Islamic medicine — historical essay unrelated to AI tooling."
+    },
+    {
+      "id": "hn-47827413",
+      "source": "hn",
+      "title": "Intel Is Making Progress. But It Isn't Out of the Woods Yet",
+      "url": "https://www.wsj.com/finance/stocks/intel-is-making-progress-but-it-isnt-out-of-the-woods-yet-f69c78d6",
+      "score": 2,
+      "publishedAt": "2026-04-19T20:30:42.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 2,
+        "numComments": 0,
+        "author": "Brajeshwar"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "Intel making progress but challenges remain — semiconductor industry news relevant to AI hardware but low immediate signal."
+    },
+    {
+      "id": "hn-47827405",
+      "source": "hn",
+      "title": "I don't care that it's X times faster",
+      "url": "https://tinkering.xyz/faster/",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:28:44.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 0,
+        "author": "RohanAdwankar"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.5,
+      "keep": true,
+      "description": "Commentary on why raw speed benchmarks miss the point — resonates with builders evaluating models and tools beyond simple performance numbers."
+    },
+    {
+      "id": "hn-47827403",
+      "source": "hn",
+      "title": "Robot breaks human world record for half-marathon in China",
+      "url": "https://www3.nhk.or.jp/nhkworld/en/news/20260419_13/",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:28:06.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 0,
+        "author": "baal80spam"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.3,
+      "keep": false,
+      "description": "Robot breaks human half-marathon record in China — robotics milestone interesting but not actionable for AI software builders."
+    },
+    {
+      "id": "hn-47827389",
+      "source": "hn",
+      "title": "Bringing the Power of the Sun to Earth: Nuclear Fusion Reactors",
+      "url": "https://www.simonsfoundation.org/2026/02/18/bringing-the-power-of-the-sun-to-earth/",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:26:37.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 0,
+        "author": "ganitam"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Nuclear fusion reactor progress — energy science unrelated to AI engineering workflows."
+    },
+    {
+      "id": "hn-47827387",
+      "source": "hn",
+      "title": "Egypt's Forgotten Industrial Revolution",
+      "url": "https://lostfutures.substack.com/p/egypts-forgotten-industrial-revolution",
+      "score": 3,
+      "publishedAt": "2026-04-19T20:26:24.000Z",
+      "metadata": {
+        "source": "hn",
+        "points": 3,
+        "numComments": 0,
+        "author": "Lost-Futures"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Egypt industrial revolution history — historical analysis with no AI engineering connection."
+    },
+    {
+      "id": "ght-paperless-ngx-paperless-ngx",
+      "source": "github-trending",
+      "title": "paperless-ngx/paperless-ngx — A community-supported supercharged document management system: scan, index and archive all your documents",
+      "url": "https://github.com/paperless-ngx/paperless-ngx",
+      "score": 382,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "paperless-ngx/paperless-ngx",
+        "stars": 38806,
+        "language": "Python",
+        "starsToday": 382
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "Document management system for scanning and indexing — useful self-hosted tool but not AI-focused."
+    },
+    {
+      "id": "ght-formbricks-formbricks",
+      "source": "github-trending",
+      "title": "formbricks/formbricks — Open Source Qualtrics Alternative",
+      "url": "https://github.com/formbricks/formbricks",
+      "score": 7,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "formbricks/formbricks",
+        "stars": 12090,
+        "language": "TypeScript",
+        "starsToday": 7
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.15,
+      "keep": false,
+      "description": "Open source Qualtrics alternative for surveys — general productivity tool not specific to AI workflows."
+    },
+    {
+      "id": "ght-dortania-OpenCore-Legacy-Patcher",
+      "source": "github-trending",
+      "title": "dortania/OpenCore-Legacy-Patcher — Experience macOS just like before",
+      "url": "https://github.com/dortania/OpenCore-Legacy-Patcher",
+      "score": 15,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "dortania/OpenCore-Legacy-Patcher",
+        "stars": 17201,
+        "language": "Python",
+        "starsToday": 15
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Tool to run modern macOS on unsupported Macs — hardware compatibility utility unrelated to AI development."
+    },
+    {
+      "id": "ght-ajeetdsouza-zoxide",
+      "source": "github-trending",
+      "title": "ajeetdsouza/zoxide — A smarter cd command. Supports all major shells.",
+      "url": "https://github.com/ajeetdsouza/zoxide",
+      "score": 71,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "ajeetdsouza/zoxide",
+        "stars": 35802,
+        "language": "Rust",
+        "starsToday": 71
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.15,
+      "keep": false,
+      "description": "Smarter cd command for navigating directories — general CLI productivity tool not AI-specific."
+    },
+    {
+      "id": "ght-resend-react-email",
+      "source": "github-trending",
+      "title": "resend/react-email — 💌 Build and send emails using React",
+      "url": "https://github.com/resend/react-email",
+      "score": 112,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "resend/react-email",
+        "stars": 18710,
+        "language": "TypeScript",
+        "starsToday": 112
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.25,
+      "keep": false,
+      "description": "Build and send emails using React components — useful developer tool but not focused on AI workflows."
+    },
+    {
+      "id": "ght-dora-rs-dora",
+      "source": "github-trending",
+      "title": "dora-rs/dora — DORA (Dataflow-Oriented Robotic Architecture) is middleware designed to streamline and simplify the creation of AI-based robotic applications. It offers low latency, composable, and distributed dataflow capabilities. Applications are modeled as directed graphs, also referred to as pipelines.",
+      "url": "https://github.com/dora-rs/dora",
+      "score": 38,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "dora-rs/dora",
+        "stars": 3647,
+        "language": "Rust",
+        "starsToday": 38
+      },
+      "category": "Infrastructure & Deployment",
+      "relevanceScore": 0.7,
+      "keep": true,
+      "description": "Dataflow-oriented middleware for AI robotic applications with low latency and distributed capabilities — relevant to builders working on agent orchestration and robotics."
+    },
+    {
+      "id": "ght-Lissy93-dashy",
+      "source": "github-trending",
+      "title": "Lissy93/dashy — 🚀 A self-hostable personal dashboard built for you. Includes status-checking, widgets, themes, icon packs, a UI editor and tons more!",
+      "url": "https://github.com/Lissy93/dashy",
+      "score": 17,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "Lissy93/dashy",
+        "stars": 24687,
+        "language": "Vue",
+        "starsToday": 17
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Self-hostable personal dashboard with widgets and themes — general homelab tool not AI-focused."
+    },
+    {
+      "id": "ght-GyulyVGC-sniffnet",
+      "source": "github-trending",
+      "title": "GyulyVGC/sniffnet — Comfortably monitor your Internet traffic 🕵️‍♂️",
+      "url": "https://github.com/GyulyVGC/sniffnet",
+      "score": 144,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "GyulyVGC/sniffnet",
+        "stars": 34459,
+        "language": "Rust",
+        "starsToday": 144
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.15,
+      "keep": false,
+      "description": "Network traffic monitoring tool — useful devops utility but not specific to AI engineering."
+    },
+    {
+      "id": "ght-codecrafters-io-build-your-own-x",
+      "source": "github-trending",
+      "title": "codecrafters-io/build-your-own-x — Master programming by recreating your favorite technologies from scratch.",
+      "url": "https://github.com/codecrafters-io/build-your-own-x",
+      "score": 301,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "codecrafters-io/build-your-own-x",
+        "stars": 491788,
+        "language": "Markdown",
+        "starsToday": 301
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.4,
+      "keep": false,
+      "description": "Curated list of tutorials for recreating technologies from scratch — educational resource but too broad for AI newsletter focus."
+    },
+    {
+      "id": "ght-Vendicated-Vencord",
+      "source": "github-trending",
+      "title": "Vendicated/Vencord — The cutest Discord modification",
+      "url": "https://github.com/Vendicated/Vencord",
+      "score": 7,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "Vendicated/Vencord",
+        "stars": 13093,
+        "language": "TypeScript",
+        "starsToday": 7
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Discord client modification — community tool unrelated to AI development."
+    },
+    {
+      "id": "ght-tiann-KernelSU",
+      "source": "github-trending",
+      "title": "tiann/KernelSU — A Kernel based root solution for Android",
+      "url": "https://github.com/tiann/KernelSU",
+      "score": 13,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "tiann/KernelSU",
+        "stars": 16052,
+        "language": "Kotlin",
+        "starsToday": 13
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Kernel-based root solution for Android — mobile security tool not relevant to AI workflows."
+    },
+    {
+      "id": "ght-DarkFlippers-unleashed-firmware",
+      "source": "github-trending",
+      "title": "DarkFlippers/unleashed-firmware — Flipper Zero Unleashed Firmware",
+      "url": "https://github.com/DarkFlippers/unleashed-firmware",
+      "score": 8,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "DarkFlippers/unleashed-firmware",
+        "stars": 21419,
+        "language": "C",
+        "starsToday": 8
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Flipper Zero firmware — hardware hacking tool unrelated to AI engineering."
+    },
+    {
+      "id": "ght-aldinokemal-go-whatsapp-web-multidevice",
+      "source": "github-trending",
+      "title": "aldinokemal/go-whatsapp-web-multidevice — GOWA - WhatsApp REST API with support for UI, Multi Account, Webhooks, and MCP, and Chatwoot. Built with Golang for efficient memory use.",
+      "url": "https://github.com/aldinokemal/go-whatsapp-web-multidevice",
+      "score": 6,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "aldinokemal/go-whatsapp-web-multidevice",
+        "stars": 3794,
+        "language": "Go",
+        "starsToday": 6
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.3,
+      "keep": false,
+      "description": "WhatsApp REST API with multi-account and webhook support — messaging integration tool with some AI chatbot potential but not core focus."
+    },
+    {
+      "id": "ght-NixOS-nixpkgs",
+      "source": "github-trending",
+      "title": "NixOS/nixpkgs — Nix Packages collection & NixOS",
+      "url": "https://github.com/NixOS/nixpkgs",
+      "score": 13,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "NixOS/nixpkgs",
+        "stars": 24345,
+        "language": "Nix",
+        "starsToday": 13
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "Nix package collection and NixOS — general Linux distribution not AI-specific."
+    },
+    {
+      "id": "ght-yt-dlp-yt-dlp",
+      "source": "github-trending",
+      "title": "yt-dlp/yt-dlp — A feature-rich command-line audio/video downloader",
+      "url": "https://github.com/yt-dlp/yt-dlp",
+      "score": 167,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "yt-dlp/yt-dlp",
+        "stars": 157695,
+        "language": "Python",
+        "starsToday": 167
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.15,
+      "keep": false,
+      "description": "Feature-rich command-line media downloader — general utility not focused on AI workflows."
+    },
+    {
+      "id": "ght-aquasecurity-trivy",
+      "source": "github-trending",
+      "title": "aquasecurity/trivy — Find vulnerabilities, misconfigurations, secrets, SBOM in containers, Kubernetes, code repositories, clouds and more",
+      "url": "https://github.com/aquasecurity/trivy",
+      "score": 21,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "aquasecurity/trivy",
+        "stars": 34611,
+        "language": "Go",
+        "starsToday": 21
+      },
+      "category": "Infrastructure & Deployment",
+      "relevanceScore": 0.35,
+      "keep": false,
+      "description": "Vulnerability scanner for containers and code repositories — DevSecOps tool useful for AI deployments but not AI-specific."
+    },
+    {
+      "id": "ght-great-expectations-great_expectations",
+      "source": "github-trending",
+      "title": "great-expectations/great_expectations — Always know what to expect from your data.",
+      "url": "https://github.com/great-expectations/great_expectations",
+      "score": 7,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "great-expectations/great_expectations",
+        "stars": 11425,
+        "language": "Python",
+        "starsToday": 7
+      },
+      "category": "Infrastructure & Deployment",
+      "relevanceScore": 0.5,
+      "keep": true,
+      "description": "Data validation library for ensuring data quality — important for AI builders managing training and inference data pipelines."
+    },
+    {
+      "id": "ght-rustdesk-rustdesk",
+      "source": "github-trending",
+      "title": "rustdesk/rustdesk — An open-source remote desktop application designed for self-hosting, as an alternative to TeamViewer.",
+      "url": "https://github.com/rustdesk/rustdesk",
+      "score": 457,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "rustdesk/rustdesk",
+        "stars": 112309,
+        "language": "Rust",
+        "starsToday": 457
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Self-hosted remote desktop alternative to TeamViewer — general remote access tool not AI-focused."
+    },
+    {
+      "id": "ght-Devolutions-UniGetUI",
+      "source": "github-trending",
+      "title": "Devolutions/UniGetUI — UniGetUI: The Graphical Interface for your package managers. Could be terribly described as a package manager manager to manage your package managers",
+      "url": "https://github.com/Devolutions/UniGetUI",
+      "score": 66,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "Devolutions/UniGetUI",
+        "stars": 22885,
+        "language": "C#",
+        "starsToday": 66
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Graphical interface for managing multiple package managers — general system utility not AI-specific."
+    },
+    {
+      "id": "ght-mnfst-manifest",
+      "source": "github-trending",
+      "title": "mnfst/manifest — Smart Model Routing for Personal AI Agents. Cut Costs up to 70% 🦞👧🦚",
+      "url": "https://github.com/mnfst/manifest",
+      "score": 469,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "mnfst/manifest",
+        "stars": 5029,
+        "language": "TypeScript",
+        "starsToday": 469
+      },
+      "category": "Infrastructure & Deployment",
+      "relevanceScore": 0.85,
+      "keep": true,
+      "description": "Smart model routing for personal AI agents claiming 70% cost reduction — directly addresses cost optimization for multi-model LLM deployments."
+    },
+    {
+      "id": "ght-avelino-awesome-go",
+      "source": "github-trending",
+      "title": "avelino/awesome-go — A curated list of awesome Go frameworks, libraries and software",
+      "url": "https://github.com/avelino/awesome-go",
+      "score": 108,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "avelino/awesome-go",
+        "stars": 170427,
+        "language": "Go",
+        "starsToday": 108
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.25,
+      "keep": false,
+      "description": "Curated list of Go frameworks and libraries — general language resource not AI-focused enough."
+    },
+    {
+      "id": "ght-juce-framework-JUCE",
+      "source": "github-trending",
+      "title": "juce-framework/JUCE — JUCE is an open-source cross-platform C++ application framework for desktop and mobile applications, including VST, VST3, AU, AUv3, LV2 and AAX audio plug-ins.",
+      "url": "https://github.com/juce-framework/JUCE",
+      "score": 4,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "juce-framework/JUCE",
+        "stars": 8321,
+        "language": "C++",
+        "starsToday": 4
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Cross-platform C++ framework for audio applications — audio development tool not AI-specific."
+    },
+    {
+      "id": "ght-pydantic-pydantic",
+      "source": "github-trending",
+      "title": "pydantic/pydantic — Data validation using Python type hints",
+      "url": "https://github.com/pydantic/pydantic",
+      "score": 8,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "pydantic/pydantic",
+        "stars": 27523,
+        "language": "Python",
+        "starsToday": 8
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.6,
+      "keep": true,
+      "description": "Data validation using Python type hints — widely used in AI projects for structured outputs and request validation."
+    },
+    {
+      "id": "ght-OpenVPN-openvpn",
+      "source": "github-trending",
+      "title": "OpenVPN/openvpn — OpenVPN is an open source VPN daemon",
+      "url": "https://github.com/OpenVPN/openvpn",
+      "score": 9,
+      "publishedAt": "2026-04-19T00:00:00.000Z",
+      "metadata": {
+        "source": "github-trending",
+        "repoFullName": "OpenVPN/openvpn",
+        "stars": 13542,
+        "language": "C",
+        "starsToday": 9
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "Open source VPN daemon — networking security tool unrelated to AI engineering."
+    },
+    {
+      "id": "reddit-1sq5ltj",
+      "source": "reddit",
+      "title": "This is how everybody on Twitter sounds like about llms",
+      "url": "https://i.redd.it/lovhiq9ls7wg1.jpeg",
+      "score": 4,
+      "publishedAt": "2026-04-19T21:24:36.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LocalLLaMA",
+        "upvotes": 4,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/LocalLLaMA/comments/1sq5ltj/this_is_how_everybody_on_twitter_sounds_like/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.3,
+      "keep": false,
+      "description": "Satirical image about LLM hype on Twitter — community humor without actionable insights."
+    },
+    {
+      "id": "reddit-1sq3mcf",
+      "source": "reddit",
+      "title": "Small open-source models can behave like real agents if the runtime owns the protocol",
+      "url": "https://i.redd.it/vlvmbajfe7wg1.png",
+      "score": 0,
+      "publishedAt": "2026-04-19T20:08:52.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LocalLLaMA",
+        "upvotes": 0,
+        "numComments": 4,
+        "permalink": "https://www.reddit.com/r/LocalLLaMA/comments/1sq3mcf/small_opensource_models_can_behave_like_real/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.7,
+      "keep": true,
+      "description": "Proposal for small open-source models to act as agents when the runtime owns the protocol — architectural pattern for agent systems."
+    },
+    {
+      "id": "reddit-1sq315h",
+      "source": "reddit",
+      "title": "Chatlectify: turn your chat history into a writing style your LLM can reuse",
+      "url": "https://github.com/0x1Adi/chatlectify",
+      "score": 0,
+      "publishedAt": "2026-04-19T19:46:13.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LocalLLaMA",
+        "upvotes": 0,
+        "numComments": 3,
+        "permalink": "https://www.reddit.com/r/LocalLLaMA/comments/1sq315h/chatlectify_turn_your_chat_history_into_a_writing/"
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.55,
+      "keep": true,
+      "description": "Tool extracts writing style from chat history for LLM personalization — practical utility for builders customizing model outputs."
+    },
+    {
+      "id": "reddit-1sq01bj",
+      "source": "reddit",
+      "title": "Unsloth fix on Mistral Small 4?",
+      "url": "https://i.redd.it/zae1ipz6r6wg1.png",
+      "score": 14,
+      "publishedAt": "2026-04-19T17:55:58.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LocalLLaMA",
+        "upvotes": 14,
+        "numComments": 7,
+        "permalink": "https://www.reddit.com/r/LocalLLaMA/comments/1sq01bj/unsloth_fix_on_mistral_small_4/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.45,
+      "keep": false,
+      "description": "Discussion about Unsloth compatibility with Mistral Small 4 — troubleshooting thread with narrow scope."
+    },
+    {
+      "id": "reddit-1sq273c",
+      "source": "reddit",
+      "title": "On the path towards a true science of deep learning [D]",
+      "url": "https://jamiesimon.io/blog/on-the-scientific-method/",
+      "score": 3,
+      "publishedAt": "2026-04-19T19:14:44.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "MachineLearning",
+        "upvotes": 3,
+        "numComments": 1,
+        "permalink": "https://www.reddit.com/r/MachineLearning/comments/1sq273c/on_the_path_towards_a_true_science_of_deep/"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.5,
+      "keep": true,
+      "description": "Essay on establishing a true science of deep learning methodology — thought-provoking for builders thinking about research rigor."
+    },
+    {
+      "id": "reddit-1spc33w",
+      "source": "reddit",
+      "title": "Trials and tribulations fine-tuning &amp; deploying Gemma-4 [P]",
+      "url": "https://www.oxen.ai/blog/writing-a-fine-tuning-and-deployment-pipeline-isnt-as-easy-as-it-looks-gemma-4-version",
+      "score": 51,
+      "publishedAt": "2026-04-18T22:57:43.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "MachineLearning",
+        "upvotes": 51,
+        "numComments": 5,
+        "permalink": "https://www.reddit.com/r/MachineLearning/comments/1spc33w/trials_and_tribulations_finetuning_deploying/"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.65,
+      "keep": true,
+      "description": "Detailed account of fine-tuning and deploying Gemma-4 with practical lessons — real-world deployment experience valuable to builders."
+    },
+    {
+      "id": "reddit-1sou5u1",
+      "source": "reddit",
+      "title": "We’re proud to open-source LIDARLearn [R] [D] [P]",
+      "url": "https://i.redd.it/53o0rt8wfxvg1.png",
+      "score": 63,
+      "publishedAt": "2026-04-18T10:36:59.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "MachineLearning",
+        "upvotes": 63,
+        "numComments": 4,
+        "permalink": "https://www.reddit.com/r/MachineLearning/comments/1sou5u1/were_proud_to_opensource_lidarlearn_r_d_p/"
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.4,
+      "keep": false,
+      "description": "Open-source LIDARLearn library released — specialized computer vision tool for LIDAR data, niche use case."
+    },
+    {
+      "id": "reddit-1soj65c",
+      "source": "reddit",
+      "title": "Zero-shot World Models Are Developmentally Efficient Learners [R]",
+      "url": "https://i.redd.it/px240r8jkuvg1.png",
+      "score": 175,
+      "publishedAt": "2026-04-18T00:58:32.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "MachineLearning",
+        "upvotes": 175,
+        "numComments": 31,
+        "permalink": "https://www.reddit.com/r/MachineLearning/comments/1soj65c/zeroshot_world_models_are_developmentally/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.6,
+      "keep": true,
+      "description": "Research on zero-shot world models as developmentally efficient learners — novel approach to model training with potential for sample-efficient agents."
+    },
+    {
+      "id": "reddit-1sq2qom",
+      "source": "reddit",
+      "title": "Asked to make a picture of it fighting a 1909 s vdb and a Roman coin",
+      "url": "https://www.reddit.com/comments/1sq2qom",
+      "sourceUrl": "https://www.reddit.com/gallery/1sq2qom",
+      "score": 0,
+      "publishedAt": "2026-04-19T19:35:15.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 0,
+        "numComments": 1,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1sq2qom/asked_to_make_a_picture_of_it_fighting_a_1909_s/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.05,
+      "keep": false,
+      "description": "User-generated image from prompt — low-signal community post."
+    },
+    {
+      "id": "reddit-1spzzl2",
+      "source": "reddit",
+      "title": "Such a useful idea if it can be done, what do you guys think?",
+      "url": "https://www.reddit.com/r/OpenAI/comments/1spzzl2/such_a_useful_idea_if_it_can_be_done_what_do_you/",
+      "sourceUrl": "https://v.redd.it/r08xzfi4r6wg1",
+      "score": 3,
+      "publishedAt": "2026-04-19T17:54:16.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 3,
+        "numComments": 7,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1spzzl2/such_a_useful_idea_if_it_can_be_done_what_do_you/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "Vague feature request discussion — lacks specificity and actionable content."
+    },
+    {
+      "id": "reddit-1spysr9",
+      "source": "reddit",
+      "title": "GPT 5.5 Spud incoming",
+      "url": "https://www.reddit.com/comments/1spysr9",
+      "sourceUrl": "https://www.reddit.com/gallery/1spysr9",
+      "score": 176,
+      "publishedAt": "2026-04-19T17:11:33.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 176,
+        "numComments": 13,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1spysr9/gpt_55_spud_incoming/"
+      },
+      "category": "News in Brief",
+      "relevanceScore": 0.4,
+      "keep": false,
+      "description": "Speculation about GPT 5.5 codename Spud — rumor with no concrete details or confirmation."
+    },
+    {
+      "id": "reddit-1spyi5p",
+      "source": "reddit",
+      "title": "Create a general Artifact Sharing App",
+      "url": "https://www.reddit.com/comments/1spyi5p",
+      "sourceUrl": "https://www.reddit.com/gallery/1spyi5p",
+      "score": 1,
+      "publishedAt": "2026-04-19T17:00:35.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 1,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1spyi5p/create_a_general_artifact_sharing_app/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.1,
+      "keep": false,
+      "description": "Request to create general artifact sharing app — vague idea post without implementation."
+    },
+    {
+      "id": "reddit-1spx5qk",
+      "source": "reddit",
+      "title": "AI Is NOT Taking Jobs",
+      "url": "https://www.youtube.com/watch?v=m7-49SaIrK4&feature=youtu.be",
+      "sourceUrl": "https://youtu.be/m7-49SaIrK4",
+      "score": 0,
+      "publishedAt": "2026-04-19T16:09:58.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 0,
+        "numComments": 3,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1spx5qk/ai_is_not_taking_jobs/"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.35,
+      "keep": false,
+      "description": "Video arguing AI is not taking jobs — opinion piece on labor market impact, tangential to builders."
+    },
+    {
+      "id": "reddit-1spsbd1",
+      "source": "reddit",
+      "title": "ChatGPT doesn't know Zohran is Mayor",
+      "url": "https://i.redd.it/i32k6dx8a5wg1.png",
+      "score": 0,
+      "publishedAt": "2026-04-19T12:59:19.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 0,
+        "numComments": 21,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1spsbd1/chatgpt_doesnt_know_zohran_is_mayor/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.2,
+      "keep": false,
+      "description": "ChatGPT factual error about mayor identity — knowledge cutoff issue, low signal."
+    },
+    {
+      "id": "reddit-1spqcfl",
+      "source": "reddit",
+      "title": "OpenAI's Support Is an AI. And It Feels Two Generations Behind Their Own Models.",
+      "url": "https://albumentations.ai/blog/2026/01-openai-support-is-an-ai/",
+      "score": 0,
+      "publishedAt": "2026-04-19T11:24:59.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 0,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1spqcfl/openais_support_is_an_ai_and_it_feels_two/"
+      },
+      "category": "Think Pieces & Analysis",
+      "relevanceScore": 0.55,
+      "keep": true,
+      "description": "Critique that OpenAI support is AI-powered but lags behind their own model capabilities — ironic observation about dogfooding and support quality."
+    },
+    {
+      "id": "reddit-1spp4ch",
+      "source": "reddit",
+      "title": "Sharing a beginner-friendly orchestration workflow for anyone just getting started building with Codex CLI.",
+      "url": "https://i.redd.it/p6pc4yqeh4wg1.png",
+      "score": 3,
+      "publishedAt": "2026-04-19T10:17:57.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 3,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1spp4ch/sharing_a_beginnerfriendly_orchestration_workflow/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.45,
+      "keep": false,
+      "description": "Beginner-friendly orchestration workflow for Codex CLI — tutorial content useful for newcomers but not broadly applicable."
+    },
+    {
+      "id": "reddit-1sponzx",
+      "source": "reddit",
+      "title": "CS2 Game breakdowns and Auto-analysis &amp; AI Coaching",
+      "url": "https://www.reddit.com/comments/1sponzx",
+      "sourceUrl": "https://www.reddit.com/gallery/1sponzx",
+      "score": 0,
+      "publishedAt": "2026-04-19T09:51:37.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "OpenAI",
+        "upvotes": 0,
+        "numComments": 3,
+        "permalink": "https://www.reddit.com/r/OpenAI/comments/1sponzx/cs2_game_breakdowns_and_autoanalysis_ai_coaching/"
+      },
+      "category": "Tools & Launches",
+      "relevanceScore": 0.25,
+      "keep": false,
+      "description": "Game analysis and AI coaching for Counter-Strike 2 — niche gaming application of AI not relevant to broader builder audience."
+    },
+    {
+      "id": "reddit-1sq4bbb",
+      "source": "reddit",
+      "title": "Hybrid implementations of RAG and MCP over the same data",
+      "url": "https://www.reddit.com/r/ClaudeAI/comments/1sq3yx2/hybrid_implementations_of_rag_and_mcp_over_the/",
+      "score": 1,
+      "publishedAt": "2026-04-19T20:35:12.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 1,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1sq4bbb/hybrid_implementations_of_rag_and_mcp_over_the/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.65,
+      "keep": true,
+      "description": "Hybrid approach combining RAG and Model Context Protocol over same data — practical pattern for knowledge retrieval systems."
+    },
+    {
+      "id": "reddit-1spvini",
+      "source": "reddit",
+      "title": "Same 9B Qwen weights: 19.1% in Aider vs 45.6% with a scaffold adapted to small local models",
+      "url": "https://www.reddit.com/r/LocalLLaMA/comments/1spufzz/same_9b_qwen_weights_191_in_aider_vs_456_with_a/",
+      "score": 1,
+      "publishedAt": "2026-04-19T15:08:23.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 1,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1spvini/same_9b_qwen_weights_191_in_aider_vs_456_with_a/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.7,
+      "keep": true,
+      "description": "Scaffold adapted for small local models boosts Qwen 9B from 19% to 45% on Aider benchmark — significant technique for improving local model performance."
+    },
+    {
+      "id": "reddit-1spqyzu",
+      "source": "reddit",
+      "title": "Build Karpathy’s LLM Wiki using Ollama, Langchain and Obsidian",
+      "url": "https://www.youtube.com/watch?v=l4EzuMKmeA0&feature=youtu.be",
+      "sourceUrl": "https://youtu.be/l4EzuMKmeA0",
+      "score": 13,
+      "publishedAt": "2026-04-19T11:56:49.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 13,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1spqyzu/build_karpathys_llm_wiki_using_ollama_langchain/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.55,
+      "keep": true,
+      "description": "Tutorial building LLM knowledge wiki using Ollama, Langchain, and Obsidian — practical workflow for personal knowledge management with local LLMs."
+    },
+    {
+      "id": "reddit-1spcod7",
+      "source": "reddit",
+      "title": "Deep dive into LangGraph’s Pregel execution model, checkpointing internals, and DeepAgents",
+      "url": "https://www.reddit.com/r/LocalLLaMA/comments/1spcnqz/deep_dive_into_langgraphs_pregel_execution_model/",
+      "score": 2,
+      "publishedAt": "2026-04-18T23:23:33.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 2,
+        "numComments": 1,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1spcod7/deep_dive_into_langgraphs_pregel_execution_model/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.65,
+      "keep": true,
+      "description": "Deep dive into LangGraph Pregel execution model and checkpointing internals — technical explanation of agent orchestration framework architecture."
+    },
+    {
+      "id": "reddit-1sp3i4i",
+      "source": "reddit",
+      "title": "What’s your biggest agent debugging pain right now?",
+      "url": "https://www.reddit.com/r/AiAutomations/comments/1sp3hdp/whats_your_biggest_agent_debugging_pain_right_now/",
+      "score": 1,
+      "publishedAt": "2026-04-18T17:17:12.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 1,
+        "numComments": 0,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1sp3i4i/whats_your_biggest_agent_debugging_pain_right_now/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.4,
+      "keep": false,
+      "description": "Question about agent debugging pain points — community feedback request without answers yet."
+    },
+    {
+      "id": "reddit-1sozafw",
+      "source": "reddit",
+      "title": "🚨 AMA Incoming: With the Authors of \"Mastering NLP from Foundations to Agents\" - Lior Gazit &amp; Meysam Ghaffari",
+      "url": "https://www.reddit.com/r/LLMeng/comments/1sl20g7/ama_incoming_with_the_authors_of_mastering_nlp/",
+      "score": 1,
+      "publishedAt": "2026-04-18T14:35:41.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 1,
+        "numComments": 2,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1sozafw/ama_incoming_with_the_authors_of_mastering_nlp/"
+      },
+      "category": "Notable Discussions",
+      "relevanceScore": 0.3,
+      "keep": false,
+      "description": "Announcement of upcoming AMA with NLP book authors — promotional post for future event not current content."
+    },
+    {
+      "id": "reddit-1sorunc",
+      "source": "reddit",
+      "title": "this one is a good to start with, if your are new to agentic frameworks",
+      "url": "https://www.youtube.com/watch?v=Y417qZVwZso&feature=youtu.be",
+      "sourceUrl": "https://youtu.be/Y417qZVwZso",
+      "score": 5,
+      "publishedAt": "2026-04-18T08:21:16.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 5,
+        "numComments": 1,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1sorunc/this_one_is_a_good_to_start_with_if_your_are_new/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.25,
+      "keep": false,
+      "description": "Video tutorial introducing agentic frameworks for beginners. Likely aggregated educational content rather than a novel technique or actionable insight for working engineers already familiar with the space."
+    },
+    {
+      "id": "reddit-1soqh02",
+      "source": "reddit",
+      "title": "Learning langchain",
+      "url": "https://www.reddit.com/r/buildinpublic/comments/1soq45b/learning_langchain/",
+      "score": 2,
+      "publishedAt": "2026-04-18T07:01:58.000Z",
+      "metadata": {
+        "source": "reddit",
+        "subreddit": "LangChain",
+        "upvotes": 2,
+        "numComments": 1,
+        "permalink": "https://www.reddit.com/r/LangChain/comments/1soqh02/learning_langchain/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.15,
+      "keep": false,
+      "description": "Reddit thread discussing learning LangChain basics. Low signal for experienced builders; minimal upvotes and comments suggest limited community validation or depth."
+    },
+    {
+      "id": "rss-5fb6b7e6cb1532db",
+      "source": "rss",
+      "title": "Changes in the system prompt between Claude Opus 4.6 and 4.7",
+      "url": "https://simonwillison.net/2026/Apr/18/opus-system-prompt/#atom-everything",
+      "score": 1,
+      "publishedAt": "2026-04-18T23:59:40.000Z",
+      "metadata": {
+        "source": "rss",
+        "feedUrl": "https://simonwillison.net/atom/everything/"
+      },
+      "category": "Model Releases",
+      "relevanceScore": 0.72,
+      "keep": true,
+      "description": "Analysis of system prompt changes between Claude Opus 4.6 and 4.7 reveals how Anthropic is tuning model behavior. Useful for engineers debugging prompt interactions or tracking capability shifts across versions."
+    },
+    {
+      "id": "rss-e2bd44446add65b4",
+      "source": "rss",
+      "title": "Claude system prompts as a git timeline",
+      "url": "https://simonwillison.net/2026/Apr/18/extract-system-prompts/#atom-everything",
+      "score": 1,
+      "publishedAt": "2026-04-18T12:25:00.000Z",
+      "metadata": {
+        "source": "rss",
+        "feedUrl": "https://simonwillison.net/atom/everything/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.68,
+      "keep": true,
+      "description": "Method for tracking Claude system prompt evolution using git history. Concrete pattern for monitoring how model providers change invisible instructions that affect output behavior over time."
+    },
+    {
+      "id": "rss-e7ee172f84b8d191",
+      "source": "rss",
+      "title": "Adding a new content type to my blog-to-newsletter tool",
+      "url": "https://simonwillison.net/guides/agentic-engineering-patterns/adding-a-new-content-type/#atom-everything",
+      "score": 1,
+      "publishedAt": "2026-04-18T03:15:36.000Z",
+      "metadata": {
+        "source": "rss",
+        "feedUrl": "https://simonwillison.net/atom/everything/"
+      },
+      "category": "Techniques & Patterns",
+      "relevanceScore": 0.62,
+      "keep": true,
+      "description": "Walkthrough of extending a blog-to-newsletter tool with agentic engineering patterns. Demonstrates practical approach to adding content types using LLM-driven workflows in production tooling."
+    }
+  ]
+}
