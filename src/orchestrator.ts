@@ -6,11 +6,10 @@ import {
 import { archiveRun, sentinelPath as archiveSentinelPath } from "./archivist/index.js";
 import { fetchAll as realFetchAll } from "./collectors/index.js";
 import { mockFetchAll } from "./collectors/mock.js";
-import { MockCurator, type Curator } from "./curator/mockCurator.js";
+import { type Curator } from "./curator/mockCurator.js";
 import {
-  ClaudeCurator,
-  AnthropicCurationClient,
   CostCeilingError,
+  selectCurator,
 } from "./curator/index.js";
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import { writeSkippedItemsJson } from "./curator/deadletter.js";
@@ -137,41 +136,8 @@ function parsePositiveInt(
   return n;
 }
 
-function parsePositiveNumber(
-  raw: string | undefined,
-  fallback: number,
-  name: string,
-): number {
-  if (raw === undefined || raw === "") return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new Error(
-      `Invalid env ${name}=${raw} (expected positive number > 0)`,
-    );
-  }
-  return n;
-}
-
 function checkSentinel(repoRoot: string, runDate: string): boolean {
   return existsSync(archiveSentinelPath(repoRoot, runDate));
-}
-
-function selectCurator(env: NodeJS.ProcessEnv): Curator {
-  const which = (env.CURATOR ?? "mock").toLowerCase();
-  if (which === "claude") {
-    return new ClaudeCurator({
-      client: new AnthropicCurationClient(),
-      chunkThreshold: env.CURATOR_CHUNK_THRESHOLD
-        ? parsePositiveInt(
-            env.CURATOR_CHUNK_THRESHOLD,
-            50,
-            "CURATOR_CHUNK_THRESHOLD",
-          )
-        : 50,
-      maxUsd: parsePositiveNumber(env.CURATOR_MAX_USD, 1.0, "CURATOR_MAX_USD"),
-    });
-  }
-  return new MockCurator();
 }
 
 /**
@@ -429,10 +395,13 @@ async function runOrchestratorInner(
     });
   }
 
-  // Curate — env-selectable:
-  //   CURATOR=mock (default) → MockCurator (E1 pass-through)
-  //   CURATOR=claude         → ClaudeCurator (E4 real Claude call)
-  const curator = opts.curator ?? selectCurator(env);
+  // Curate — env-selectable. Backends routed by `selectCurator` in
+  // `src/curator/index.ts`:
+  //   CURATOR=mock (default)                    → MockCurator (E1)
+  //   CURATOR=claude + CURATOR_BACKEND=legacy   → ClaudeCurator (preserved)
+  //   CURATOR=claude (no legacy flag)           → DeepAgents curator (M1+)
+  const curator =
+    opts.curator ?? (await selectCurator(env, { runId, runDate }));
   let scored: ScoredItem[];
   try {
     scored = await stage("curate", () => curator.curate(filteredItems));
