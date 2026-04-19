@@ -21,6 +21,7 @@ import type { Curator, CuratorMetrics } from "../mockCurator.js";
 import type { SkippedItemRecord } from "../deadletter.js";
 import type { RawItem, ScoredItem } from "../../types.js";
 import { parseBoolFlag, parsePositiveInt } from "../../env.js";
+import type { BuildAgentOptions } from "./adapter.js";
 import {
   assertPinnedVersions,
   VersionDriftError,
@@ -123,9 +124,11 @@ export interface RunDeepAgentCuratorContext {
   /**
    * Tests inject a mock ChatModel here to exercise the full LangGraph
    * pipeline without touching the Anthropic API. Production never sets
-   * this — `adapter.ts` binds `ChatAnthropic` to `MODEL_PIN`.
+   * this — `adapter.ts` binds `ChatAnthropic` to `MODEL_PIN`. Typed via
+   * `BuildAgentOptions["model"]` (BaseChatModel) so a prod caller can't
+   * accidentally pass an arbitrary object past the type checker.
    */
-  readonly modelOverride?: unknown;
+  readonly modelOverride?: BuildAgentOptions["model"];
 }
 
 /**
@@ -148,12 +151,11 @@ export async function runDeepAgentCurator(
       runDate: ctx.runDate,
       maxIterations: cfg.maxIterations,
     },
-    // `unknown` here is the test-injection escape hatch. The adapter's
-    // `BuildAgentOptions.model` is typed as `BaseChatModel`; in prod this
-    // stays undefined. Tests pass `fakeModel()` which structurally
-    // satisfies the interface.
+    // Test-injection escape hatch. `modelOverride` is typed as
+    // `BuildAgentOptions["model"]` (BaseChatModel) so the adapter sees a
+    // properly-typed value; in prod this stays undefined.
     ctx.modelOverride
-      ? { model: ctx.modelOverride as never }
+      ? { model: ctx.modelOverride }
       : {},
   );
 }

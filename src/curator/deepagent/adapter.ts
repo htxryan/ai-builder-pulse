@@ -35,6 +35,7 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { z } from "zod";
 import { log } from "../../log.js";
+import { OrchestratorStageError } from "../../errors.js";
 import type { RawItem, ScoredItem } from "../../types.js";
 import { ScoredItemSchema } from "../../types.js";
 import {
@@ -45,7 +46,31 @@ import {
 import { MODEL_PIN, SYSTEM_PROMPT, PROMPT_VERSION } from "../prompt.js";
 
 const DEFAULT_MAX_TOKENS = 16_000;
+// Test-time fallback only. `runDeepAgentCurator` always supplies
+// `ctx.maxIterations` from `DEEPAGENT_DEFAULTS.maxIterations`; this default
+// exists because `runAdapter` is also called directly from the adapter tests,
+// which don't plumb through the config module. Kept local to avoid a
+// circular import between `adapter.ts` ↔ `index.ts`; values are asserted
+// equal by `tests/curator/deepagent/adapter.test.ts` if this drifts.
 const DEFAULT_MAX_ITERATIONS = 6;
+
+/**
+ * E-05 sibling error: the agent returned the right count but at least one
+ * record id is unknown, or a single id appears more than once. Orchestrator
+ * catchers branching on `OrchestratorStageError` treat this uniformly with
+ * `CountInvariantError` — both mean "the response does not correspond
+ * bijectively to the input chunk."
+ */
+export class UnexpectedRecordIdError extends OrchestratorStageError {
+  constructor(
+    message: string,
+    public readonly recordId: string,
+    public readonly kind: "unknown" | "duplicate",
+  ) {
+    super(message, { stage: "curate", retryable: false });
+    this.name = "UnexpectedRecordIdError";
+  }
+}
 
 export interface AdapterContext {
   readonly runId: string;
@@ -176,13 +201,17 @@ function assertChunkIds(
   const seen = new Set<string>();
   for (const r of records) {
     if (!want.has(r.id)) {
-      throw new Error(
+      throw new UnexpectedRecordIdError(
         `DeepAgent adapter: response contained unexpected id "${r.id}" not in chunk input`,
+        r.id,
+        "unknown",
       );
     }
     if (seen.has(r.id)) {
-      throw new Error(
+      throw new UnexpectedRecordIdError(
         `DeepAgent adapter: response contained duplicate id "${r.id}"`,
+        r.id,
+        "duplicate",
       );
     }
     seen.add(r.id);
@@ -198,8 +227,11 @@ function mergeToScoredItems(
   for (const raw of items) {
     const rec = recById.get(raw.id);
     if (!rec) {
-      // Already guarded by assertChunkIds, but keep the throw here so the
-      // invariant is locally visible rather than relying on call order.
+      // Dead-code defense: `assertChunkIds` has already proven
+      // `Set(records.map(id)) === Set(items.map(id))`, so this branch is
+      // unreachable at runtime. Kept so the invariant is visible at the
+      // merge site and a future refactor that skips `assertChunkIds` fails
+      // loudly instead of silently dropping items.
       throw new CountInvariantError(items.length, records.length);
     }
     // Full ScoredItemSchema parse — catches any drift where the record's
@@ -224,8 +256,11 @@ function mergeToScoredItems(
  * and cache preservation land in M3, and tools + audit in M4.
  *
  * Throws:
- *   - `CountInvariantError` when the agent does not emit exactly one
- *     record per input id (E-05).
+ *   - `CountInvariantError` when the agent's record count differs from
+ *     the input chunk length (E-05).
+ *   - `UnexpectedRecordIdError` (also `OrchestratorStageError`) when the
+ *     count matches but a record id is unknown or duplicated (E-05 sibling
+ *     — the response still fails to map bijectively to the input).
  *   - a plain `Error` when the structured response is present but fails
  *     the `CurationResponseSchema` re-validation (LangChain's JSON-schema
  *     path and our Zod schema must agree; a drift here is a programmer
@@ -255,7 +290,22 @@ export async function runAdapter(
     { recursionLimit: maxIterations },
   );
 
-  const structured = (result as { structuredResponse?: unknown })
+  // Distinguish "LangChain dropped the key entirely" (API shape changed)
+  // from "key is present but the JSON fails our Zod schema" (model drift).
+  // The two failures look identical when we only read `.structuredResponse`
+  // — an absent key produces `undefined`, which Zod then rejects with a
+  // misleading "expected object" message. Explicit `in` check surfaces the
+  // true cause.
+  if (
+    typeof result !== "object" ||
+    result === null ||
+    !("structuredResponse" in result)
+  ) {
+    throw new Error(
+      `DeepAgent adapter: agent result missing "structuredResponse" key — @langchain/core providerStrategy API may have changed`,
+    );
+  }
+  const structured = (result as { structuredResponse: unknown })
     .structuredResponse;
   const parsed = CurationResponseSchema.safeParse(structured);
   if (!parsed.success) {

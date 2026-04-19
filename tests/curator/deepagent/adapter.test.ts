@@ -17,8 +17,10 @@ import { AIMessage, fakeModel } from "langchain";
 import {
   buildCurationAgent,
   runAdapter,
+  UnexpectedRecordIdError,
 } from "../../../src/curator/deepagent/adapter.js";
 import { CountInvariantError } from "../../../src/curator/claudeCurator.js";
+import { OrchestratorStageError } from "../../../src/errors.js";
 import { CATEGORIES, type RawItem } from "../../../src/types.js";
 
 function rawItem(i: number): RawItem {
@@ -35,6 +37,13 @@ function rawItem(i: number): RawItem {
 
 function makeRecords(items: readonly RawItem[], opts?: { count?: number }) {
   const n = opts?.count ?? items.length;
+  // Guard: `count > items.length` would emit duplicate ids via `i % items.length`
+  // and mask a count-invariant test as an unexpected-id/duplicate failure.
+  if (n > items.length) {
+    throw new Error(
+      `makeRecords: count=${n} exceeds items.length=${items.length} — would produce duplicate ids`,
+    );
+  }
   return Array.from({ length: n }, (_, i) => ({
     id: items[i % items.length]!.id,
     category: CATEGORIES[i % CATEGORIES.length]!,
@@ -98,18 +107,43 @@ describe("DeepAgent adapter — structured output", () => {
     recs[0] = { ...recs[0]!, id: "unknown-id" };
     const model = fakeModel().respond(jsonMessage({ items: recs }));
 
-    await expect(
-      runAdapter(
-        items,
-        { runId: "rid", runDate: "2026-04-19" },
-        { model },
-      ),
-    ).rejects.toThrow(/unexpected id/);
+    const promise = runAdapter(
+      items,
+      { runId: "rid", runDate: "2026-04-19" },
+      { model },
+    );
+    await expect(promise).rejects.toBeInstanceOf(UnexpectedRecordIdError);
+    // Also an OrchestratorStageError — the orchestrator's stage-scoped
+    // catcher must treat this uniformly with CountInvariantError.
+    await expect(promise).rejects.toBeInstanceOf(OrchestratorStageError);
+    await expect(promise).rejects.toThrow(/unexpected id/);
   });
 
-  it("rejects a response that fails Zod validation", async () => {
+  it("rejects a response with a duplicate id (OrchestratorStageError)", async () => {
     const items = Array.from({ length: 2 }, (_, i) => rawItem(i));
-    // `relevanceScore: 1.5` violates the 0..1 bound.
+    const recs = makeRecords(items);
+    // Force a duplicate: both records now carry items[0].id.
+    recs[1] = { ...recs[1]!, id: items[0]!.id };
+    const model = fakeModel().respond(jsonMessage({ items: recs }));
+
+    const promise = runAdapter(
+      items,
+      { runId: "rid", runDate: "2026-04-19" },
+      { model },
+    );
+    await expect(promise).rejects.toBeInstanceOf(UnexpectedRecordIdError);
+    await expect(promise).rejects.toBeInstanceOf(OrchestratorStageError);
+    await expect(promise).rejects.toThrow(/duplicate id/);
+  });
+
+  it("rejects a response that violates the schema contract", async () => {
+    const items = Array.from({ length: 2 }, (_, i) => rawItem(i));
+    // `relevanceScore: 1.5` violates the 0..1 bound. `providerStrategy`
+    // validates the JSON-schema translation itself and omits
+    // `structuredResponse` when the response fails validation, so our
+    // explicit missing-key guard fires first. Either failure mode — the
+    // provider-side guard or our Zod re-validation — must abort the run
+    // loudly rather than leak a malformed record into the pipeline.
     const model = fakeModel().respond(
       jsonMessage({
         items: [
@@ -137,7 +171,7 @@ describe("DeepAgent adapter — structured output", () => {
         { runId: "rid", runDate: "2026-04-19" },
         { model },
       ),
-    ).rejects.toThrow(/Zod validation/);
+    ).rejects.toThrow(/structuredResponse|Zod validation/);
   });
 
   it("empty input returns empty output without invoking the model", async () => {
