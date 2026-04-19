@@ -122,6 +122,30 @@ describe("Orchestrator + ClaudeCurator (E4)", () => {
     expect(r.reason).toBe("Un-01");
   });
 
+  // ai-builder-pulse-gwv — the hallucination circuit breaker must surface a
+  // DISTINCT orchestrator reason so operators can distinguish "stuck model"
+  // from ordinary curator failures in the GHA summary without parsing logs.
+  it("fails with reason=curator_hallucination_circuit_breaker when model reproducibly hallucinates same id", async () => {
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        const records: CurationRecord[] = rawItems.map((r, i) =>
+          i === 0 ? mkRecord("hn-47821814") : mkRecord(r.id),
+        );
+        return { records, inputTokens: 10, outputTokens: 5 };
+      },
+    };
+    const curator = new ClaudeCurator({ client, maxRetries: 3 });
+    const r = await runOrchestrator({
+      now: fixedNow,
+      repoRoot: root,
+      env: { DRY_RUN: "1", MIN_ITEMS_TO_PUBLISH: "1", MIN_SOURCES: "2" },
+      fetchAll: fixtureFetch(),
+      curator,
+    });
+    expect(r.status).toBe("failed");
+    expect(r.reason).toBe("curator_hallucination_circuit_breaker");
+  });
+
   it("fails the run when Curator throws CountInvariantError (E-05)", async () => {
     const client: CurationClient = {
       async call({ rawItems }) {

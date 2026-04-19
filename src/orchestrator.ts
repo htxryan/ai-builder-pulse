@@ -9,6 +9,7 @@ import { mockFetchAll } from "./collectors/mock.js";
 import { type Curator } from "./curator/mockCurator.js";
 import {
   CostCeilingError,
+  CuratorHallucinationCircuitBreakerError,
   selectCurator,
 } from "./curator/index.js";
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
@@ -419,6 +420,25 @@ async function runOrchestratorInner(
         runDate,
         status: "failed",
         reason: "cost_ceiling",
+        summary: filteredSummary,
+        curatorMetrics: curator.lastMetrics?.(),
+      });
+    }
+    // ai-builder-pulse-gwv — fail fast with a distinct reason when the model
+    // reproducibly returns the same hallucinated id across consecutive mitigated
+    // retries on a chunk. Operators can grep for this status to distinguish a
+    // stuck-model incident from ordinary curator failures (JSON parse, count
+    // invariant, transient 5xx) without having to parse log lines.
+    if (err instanceof CuratorHallucinationCircuitBreakerError) {
+      log.error("curator hallucination circuit breaker", {
+        unexpectedId: err.unexpectedId,
+        chunkIdx: err.chunkIdx,
+        attempts: err.attempts,
+      });
+      return done({
+        runDate,
+        status: "failed",
+        reason: "curator_hallucination_circuit_breaker",
         summary: filteredSummary,
         curatorMetrics: curator.lastMetrics?.(),
       });

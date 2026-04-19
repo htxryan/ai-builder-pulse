@@ -104,20 +104,34 @@ export class AnthropicCurationClient implements CurationClient {
   async call(args: {
     systemPrompt: string;
     rawItems: readonly RawItem[];
+    disableCache?: boolean;
+    extraUserMessage?: string;
   }): Promise<CurationCallResult> {
     const userContent = formatItemsPayload(args.rawItems);
     const format = this.outputFormatOverride ?? curationOutputFormat();
+    // Retry mitigation hints from ClaudeCurator. `disableCache` drops the
+    // ephemeral cache_control on the system prompt (defeats prompt-cache
+    // bleed); `extraUserMessage` appends a trailing user turn that re-grounds
+    // the model on the valid id set for this chunk. See ai-builder-pulse-gwv.
+    const systemBlock: SystemBlock =
+      args.disableCache === true
+        ? { type: "text", text: args.systemPrompt }
+        : {
+            type: "text",
+            text: args.systemPrompt,
+            cache_control: { type: "ephemeral" },
+          };
+    const messages: MessagesParseArgs["messages"] = [
+      { role: "user", content: userContent },
+    ];
+    if (args.extraUserMessage !== undefined && args.extraUserMessage.length > 0) {
+      messages.push({ role: "user", content: args.extraUserMessage });
+    }
     const result = await this.messagesParse({
       model: this.model,
       max_tokens: this.maxTokens,
-      system: [
-        {
-          type: "text",
-          text: args.systemPrompt,
-          cache_control: { type: "ephemeral" },
-        },
-      ],
-      messages: [{ role: "user", content: userContent }],
+      system: [systemBlock],
+      messages,
       output_config: { format },
     });
 

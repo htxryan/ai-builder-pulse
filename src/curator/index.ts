@@ -4,6 +4,8 @@ export {
   ClaudeCurator,
   CountInvariantError,
   CostCeilingError,
+  CuratorHallucinationCircuitBreakerError,
+  UnexpectedRecordIdError,
   CurationRecordSchema,
   CurationResponseSchema,
   chunkItems,

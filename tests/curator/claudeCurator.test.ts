@@ -3,6 +3,8 @@ import {
   ClaudeCurator,
   CountInvariantError,
   CostCeilingError,
+  CuratorHallucinationCircuitBreakerError,
+  UnexpectedRecordIdError,
   chunkItems,
   type CurationCallResult,
   type CurationClient,
@@ -380,6 +382,140 @@ describe("ClaudeCurator", () => {
     // into two chunks we get duplicates on merge.
     const items = [raw("a"), raw("b"), raw("a"), raw("c")];
     await expect(cur.curate(items)).rejects.toThrow(/merge conflict/);
+  });
+
+  // ai-builder-pulse-gwv — retry loop must recover from a first-attempt
+  // hallucinated id when the second attempt returns a valid set. Exercises
+  // the full mitigation path (shuffle + disableCache + extraUserMessage).
+  it("hallucination recovery: mitigated retry succeeds when second attempt returns valid ids", async () => {
+    let attempts = 0;
+    const seenArgs: Array<{
+      ids: string[];
+      disableCache: boolean | undefined;
+      extraUserMessage: string | undefined;
+    }> = [];
+    const client: CurationClient = {
+      async call({ rawItems, disableCache, extraUserMessage }) {
+        attempts += 1;
+        seenArgs.push({
+          ids: rawItems.map((r) => r.id),
+          disableCache,
+          extraUserMessage,
+        });
+        if (attempts === 1) {
+          // Hallucinate one unknown id on attempt 1.
+          const records: CurationRecord[] = rawItems.map((r, i) =>
+            i === 0 ? mkRecord("hn-999999") : mkRecord(r.id),
+          );
+          return { records, inputTokens: 10, outputTokens: 5 };
+        }
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 10,
+          outputTokens: 5,
+        };
+      },
+    };
+    const cur = new ClaudeCurator({ client, maxRetries: 3 });
+    const items = Array.from({ length: 3 }, (_, i) => raw(`i${i}`));
+    const out = await cur.curate(items);
+    expect(out.length).toBe(3);
+    expect(attempts).toBe(2);
+    // Attempt 1: no mitigation hints.
+    expect(seenArgs[0]!.disableCache).toBeUndefined();
+    expect(seenArgs[0]!.extraUserMessage).toBeUndefined();
+    // Attempt 2: mitigation applied.
+    expect(seenArgs[1]!.disableCache).toBe(true);
+    expect(seenArgs[1]!.extraUserMessage).toMatch(/CRITICAL REMINDER/);
+    expect(seenArgs[1]!.extraUserMessage).toMatch(/i0/);
+    // Shuffle should still include all original ids (just possibly reordered).
+    expect(new Set(seenArgs[1]!.ids)).toEqual(new Set(["i0", "i1", "i2"]));
+  });
+
+  // Circuit breaker: same hallucinated id on two consecutive attempts trips
+  // the breaker so the run fails with a distinct error class INSTEAD of
+  // burning the full retry budget. This is the 2026-04-19 prod incident
+  // (chunk 9 returning `hn-47821814` on all 3 retries).
+  it("hallucination circuit breaker: identical unexpected id on consecutive attempts fails fast", async () => {
+    let attempts = 0;
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        attempts += 1;
+        // Reproducibly return the same unknown id every time.
+        const records: CurationRecord[] = rawItems.map((r, i) =>
+          i === 0 ? mkRecord("hn-47821814") : mkRecord(r.id),
+        );
+        return { records, inputTokens: 10, outputTokens: 5 };
+      },
+    };
+    const cur = new ClaudeCurator({ client, maxRetries: 3 });
+    const items = Array.from({ length: 3 }, (_, i) => raw(`i${i}`));
+    await expect(cur.curate(items)).rejects.toBeInstanceOf(
+      CuratorHallucinationCircuitBreakerError,
+    );
+    // Acceptance criterion: MUST NOT burn the full 3-retry budget.
+    expect(attempts).toBe(2);
+  });
+
+  // Different hallucinated ids across attempts should NOT trip the circuit
+  // breaker — that pattern is a retry-worthy transient error, not a stuck
+  // model. Retries continue until exhaustion.
+  it("hallucination circuit breaker: different unexpected ids do NOT trip breaker", async () => {
+    let attempts = 0;
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        attempts += 1;
+        const ghostId = `hn-ghost-${attempts}`;
+        const records: CurationRecord[] = rawItems.map((r, i) =>
+          i === 0 ? mkRecord(ghostId) : mkRecord(r.id),
+        );
+        return { records, inputTokens: 10, outputTokens: 5 };
+      },
+    };
+    const cur = new ClaudeCurator({ client, maxRetries: 3 });
+    const items = Array.from({ length: 3 }, (_, i) => raw(`i${i}`));
+    await expect(cur.curate(items)).rejects.toBeInstanceOf(
+      UnexpectedRecordIdError,
+    );
+    expect(attempts).toBe(3);
+  });
+
+  // A non-hallucination error between two identical hallucinations should
+  // reset the repeat tracker — don't false-positive the breaker on an
+  // interleaved JSON parse error.
+  it("hallucination circuit breaker: non-hallucination error between identical ids resets tracker", async () => {
+    let attempts = 0;
+    const client: CurationClient = {
+      async call({ rawItems }) {
+        attempts += 1;
+        if (attempts === 1) {
+          const records: CurationRecord[] = rawItems.map((r, i) =>
+            i === 0 ? mkRecord("hn-ghost") : mkRecord(r.id),
+          );
+          return { records, inputTokens: 10, outputTokens: 5 };
+        }
+        if (attempts === 2) throw new SyntaxError("invalid JSON");
+        if (attempts === 3) {
+          const records: CurationRecord[] = rawItems.map((r, i) =>
+            i === 0 ? mkRecord("hn-ghost") : mkRecord(r.id),
+          );
+          return { records, inputTokens: 10, outputTokens: 5 };
+        }
+        return {
+          records: rawItems.map((r) => mkRecord(r.id)),
+          inputTokens: 10,
+          outputTokens: 5,
+        };
+      },
+    };
+    // maxRetries=4 so attempt 4 can run (success) after the 3 failures.
+    const cur = new ClaudeCurator({ client, maxRetries: 4 });
+    const items = Array.from({ length: 2 }, (_, i) => raw(`i${i}`));
+    const out = await cur.curate(items);
+    expect(out.length).toBe(2);
+    // Attempted 4 times; breaker did NOT fire despite repeat ids (JSON error
+    // between them reset the tracker).
+    expect(attempts).toBe(4);
   });
 
   it("per-source metrics: apportions cost by item-count share across mixed-source chunks", async () => {

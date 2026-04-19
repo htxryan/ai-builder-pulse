@@ -50,6 +50,20 @@ export interface CurationClient {
   call(args: {
     systemPrompt: string;
     rawItems: readonly RawItem[];
+    // Retry-mitigation hints populated by ClaudeCurator.callWithRetry when a
+    // prior attempt produced an UnexpectedRecordIdError on this chunk. Real
+    // clients MUST honor these on the next attempt; mocks may safely ignore.
+    //
+    // disableCache=true ⇒ drop `cache_control` on the system prompt for this
+    // call. Why: the prod 2026-04-19 hallucination pattern (chunk 9 returning
+    // `hn-47821814` on all 3 retries) is consistent with prompt-cache bleed
+    // where a prior chunk's ids leak into the current response.
+    //
+    // extraUserMessage ⇒ appended as a trailing user-turn line that
+    // re-enumerates the valid id set verbatim. Why: forces the model to
+    // re-ground on the input set instead of copying from cached context.
+    readonly disableCache?: boolean;
+    readonly extraUserMessage?: string;
   }): Promise<CurationCallResult>;
   // Optional — identifies the pinned model this client targets. Surfaced
   // through `CuratorMetrics.model` so the operator job summary can show what
@@ -94,6 +108,44 @@ export class CountInvariantError extends OrchestratorStageError {
       { stage: "curate", retryable: false },
     );
     this.name = "CountInvariantError";
+  }
+}
+
+// Model returned a record whose id is not in the chunk's input set. Thrown
+// by `assertChunkIds` and caught by `callWithRetry` — the retry loop branches
+// on this class to apply mitigation (see CurationClient.disableCache /
+// extraUserMessage) instead of burning a naive retry on an identical prompt.
+// The 2026-04-19 prod incident (chunk 9 reproducibly returned `hn-47821814`
+// on all 3 retries) is the canonical case this class exists to remediate.
+export class UnexpectedRecordIdError extends OrchestratorStageError {
+  constructor(
+    public readonly unexpectedId: string,
+    public readonly chunkIdx?: number,
+  ) {
+    super(
+      `curator response contained unexpected id "${unexpectedId}" not in chunk input`,
+      { stage: "curate", retryable: true },
+    );
+    this.name = "UnexpectedRecordIdError";
+  }
+}
+
+// Fail-fast terminal state for a chunk whose model response keeps returning
+// the SAME hallucinated id across consecutive mitigated retries. Distinct
+// from a plain retry exhaustion so the operator can tell "model is broken
+// on this chunk" apart from "transient network/JSON error." The acceptance
+// criteria on ai-builder-pulse-gwv explicitly call this out.
+export class CuratorHallucinationCircuitBreakerError extends OrchestratorStageError {
+  constructor(
+    public readonly unexpectedId: string,
+    public readonly chunkIdx: number,
+    public readonly attempts: number,
+  ) {
+    super(
+      `curator hallucination circuit breaker tripped: id "${unexpectedId}" repeated on chunk ${chunkIdx} across ${attempts} attempts — aborting to save budget`,
+      { stage: "curate", retryable: false },
+    );
+    this.name = "CuratorHallucinationCircuitBreakerError";
   }
 }
 
@@ -356,11 +408,20 @@ export class ClaudeCurator implements Curator {
   ): Promise<CurationCallResult> {
     const expected = chunk.length;
     let lastErr: unknown;
+    // Hallucination mitigation state carried across attempts. Populated when
+    // an attempt throws UnexpectedRecordIdError; consumed on the NEXT attempt.
+    let lastUnexpectedId: string | undefined;
+    let workingChunk: readonly RawItem[] = chunk;
+    let disableCache = false;
+    let extraUserMessage: string | undefined;
+
     for (let attempt = 1; attempt <= this.maxRetries; attempt += 1) {
       try {
         const result = await this.client.call({
           systemPrompt: this.systemPrompt,
-          rawItems: chunk,
+          rawItems: workingChunk,
+          ...(disableCache ? { disableCache: true } : {}),
+          ...(extraUserMessage !== undefined ? { extraUserMessage } : {}),
         });
         // Validate record shape defensively; the real client already runs
         // Zod parse via structured output, but a mock may not.
@@ -369,7 +430,7 @@ export class ClaudeCurator implements Curator {
         );
         // E-05 per-chunk enforcement — we MUST see exactly the ids we sent,
         // with no extras and no drops, before merging.
-        assertChunkIds(chunk, records);
+        assertChunkIds(workingChunk, records, chunkIdx);
         // Cost ceiling — a single chunk that > 2× its fair share of the
         // total budget signals a regression (prompt drift, cost spike) and
         // must fail loudly instead of silently compounding across chunks.
@@ -396,6 +457,47 @@ export class ClaudeCurator implements Curator {
         // CostCeilingError is a hard-fail — do not retry. Retrying a cost
         // overrun just burns more budget on the same regression.
         if (err instanceof CostCeilingError) throw err;
+
+        // Hallucination-specific branch. A repeated unexpected id across two
+        // consecutive attempts on the same chunk is strong evidence that
+        // naive retries will not recover (prompt-cache bleed, deterministic
+        // model quirk, or provider-side cache). Trip the circuit breaker so
+        // the run fails fast with a distinct status instead of burning the
+        // full retry budget.
+        if (err instanceof UnexpectedRecordIdError) {
+          if (lastUnexpectedId === err.unexpectedId) {
+            log.error("curator hallucination circuit breaker tripped", {
+              chunkIdx,
+              unexpectedId: err.unexpectedId,
+              attempts: attempt,
+            });
+            throw new CuratorHallucinationCircuitBreakerError(
+              err.unexpectedId,
+              chunkIdx,
+              attempt,
+            );
+          }
+          lastUnexpectedId = err.unexpectedId;
+          // Prepare mitigation for the next attempt: shuffle the payload
+          // (defeats prompt-cache and positional biases), disable system-
+          // prompt caching, and append a trailing user-turn reminder that
+          // enumerates the valid id set.
+          workingChunk = shuffle(chunk);
+          disableCache = true;
+          extraUserMessage = buildReinjectionMessage(workingChunk);
+          log.warn("curator chunk hallucinated id — applying mitigation on retry", {
+            chunkIdx,
+            attempt,
+            unexpectedId: err.unexpectedId,
+            mitigation: "shuffle+disableCache+reinjectIds",
+          });
+        } else {
+          // Reset the repeat-id tracker for non-hallucination errors so an
+          // earlier hallucination followed by a JSON error then another
+          // identical hallucination doesn't prematurely trip the breaker.
+          lastUnexpectedId = undefined;
+        }
+
         lastErr = err;
         log.warn("curator chunk attempt failed", {
           chunkIdx,
@@ -429,6 +531,7 @@ export function chunkItems<T>(items: readonly T[], size: number): T[][] {
 function assertChunkIds(
   chunk: readonly RawItem[],
   records: readonly CurationRecord[],
+  chunkIdx?: number,
 ): void {
   if (records.length !== chunk.length) {
     throw new CountInvariantError(chunk.length, records.length);
@@ -437,13 +540,31 @@ function assertChunkIds(
   const seen = new Set<string>();
   for (const r of records) {
     if (!want.has(r.id)) {
-      throw new Error(
-        `curator response contained unexpected id "${r.id}" not in chunk input`,
-      );
+      throw new UnexpectedRecordIdError(r.id, chunkIdx);
     }
     if (seen.has(r.id)) {
       throw new Error(`curator response contained duplicate id "${r.id}"`);
     }
     seen.add(r.id);
   }
+}
+
+// Fisher–Yates. Seeded off `Math.random()` is fine — the only invariant we
+// rely on is that the shuffled order is (with near certainty) different from
+// the prior attempt's order, so the model can't re-use a cached response
+// keyed on the exact payload bytes.
+function shuffle<T>(items: readonly T[]): T[] {
+  const out = items.slice();
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = out[i] as T;
+    out[i] = out[j] as T;
+    out[j] = tmp;
+  }
+  return out;
+}
+
+function buildReinjectionMessage(chunk: readonly RawItem[]): string {
+  const ids = chunk.map((i) => i.id).join(", ");
+  return `CRITICAL REMINDER: each record's "id" MUST be copied verbatim from the input. The valid id set for this chunk is exactly: ${ids}. Do not invent, abbreviate, or substitute ids — unknown ids will be rejected.`;
 }
