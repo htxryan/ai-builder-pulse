@@ -15,6 +15,7 @@ import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import { writeSkippedItemsJson } from "./curator/deadletter.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
 import { bindRunId, log, makeRunId, registerSecretsFromEnv } from "./log.js";
+import { parsePositiveInt } from "./env.js";
 import { runBackfill, type BackfillResult } from "./backfill.js";
 import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
 import { renderIssue, type RenderedIssue } from "./renderer/index.js";
@@ -120,21 +121,6 @@ const DEFAULT_MIN_ITEMS = 5;
 const DEFAULT_MIN_SOURCES = 2;
 // 12 min — leaves a 3 min safety margin under GHA's 15 min job cap.
 const DEFAULT_ORCHESTRATOR_TIMEOUT_MS = 12 * 60 * 1000;
-
-function parsePositiveInt(
-  raw: string | undefined,
-  fallback: number,
-  name: string,
-): number {
-  if (raw === undefined || raw === "") return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
-    throw new Error(
-      `Invalid env ${name}=${raw} (expected positive integer >= 1)`,
-    );
-  }
-  return n;
-}
 
 function checkSentinel(repoRoot: string, runDate: string): boolean {
   return existsSync(archiveSentinelPath(repoRoot, runDate));
@@ -397,11 +383,27 @@ async function runOrchestratorInner(
 
   // Curate — env-selectable. Backends routed by `selectCurator` in
   // `src/curator/index.ts`:
-  //   CURATOR=mock (default)                    → MockCurator (E1)
-  //   CURATOR=claude + CURATOR_BACKEND=legacy   → ClaudeCurator (preserved)
-  //   CURATOR=claude (no legacy flag)           → DeepAgents curator (M1+)
-  const curator =
-    opts.curator ?? (await selectCurator(env, { runId, runDate }));
+  //   CURATOR=mock (default)                        → MockCurator (E1)
+  //   CURATOR=claude (default backend)              → ClaudeCurator (preserved)
+  //   CURATOR=claude + CURATOR_BACKEND=deepagents   → DeepAgents curator (M2+)
+  //
+  // Wrap factory in try/catch so an env parse error or version-drift error
+  // surfaces through the orchestrator's `failed` contract instead of as an
+  // unhandled rejection (runOrchestrator promises "always resolves").
+  let curator: Curator;
+  try {
+    curator = opts.curator ?? (await selectCurator(env, { runId, runDate }));
+  } catch (err) {
+    log.error("curator init failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return done({
+      runDate,
+      status: "failed",
+      reason: "curator_init_failed",
+      summary: filteredSummary,
+    });
+  }
   let scored: ScoredItem[];
   try {
     scored = await stage("curate", () => curator.curate(filteredItems));

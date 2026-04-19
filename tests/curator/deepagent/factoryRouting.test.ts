@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { selectCurator } from "../../../src/curator/index.js";
 
 // AnthropicCurationClient reads process.env.ANTHROPIC_API_KEY at construction.
-// Set/unset a stub for the tests that exercise the legacy path.
+// Set/unset a stub for the tests that exercise the Claude path.
 let originalKey: string | undefined;
 beforeEach(() => {
   originalKey = process.env.ANTHROPIC_API_KEY;
@@ -38,7 +38,15 @@ describe("selectCurator", () => {
     },
   );
 
-  it("routes CURATOR=claude + CURATOR_BACKEND=legacy to ClaudeCurator (preserved)", async () => {
+  it("routes CURATOR=claude (default backend) to ClaudeCurator (preserved)", async () => {
+    const c = await selectCurator(
+      { CURATOR: "claude", ANTHROPIC_API_KEY: "sk-test" },
+      { runId: "r", runDate: "2026-04-19" },
+    );
+    expect(c.constructor.name).toBe("ClaudeCurator");
+  });
+
+  it("routes CURATOR=claude + CURATOR_BACKEND=legacy to ClaudeCurator (explicit)", async () => {
     const c = await selectCurator(
       {
         CURATOR: "claude",
@@ -50,36 +58,39 @@ describe("selectCurator", () => {
     expect(c.constructor.name).toBe("ClaudeCurator");
   });
 
-  it("routes CURATOR=claude (no backend flag) to DeepAgentCurator", async () => {
+  it("routes CURATOR=claude + CURATOR_BACKEND=deepagents to DeepAgentCurator", async () => {
     const c = await selectCurator(
-      { CURATOR: "claude", ANTHROPIC_API_KEY: "sk-test" },
+      {
+        CURATOR: "claude",
+        CURATOR_BACKEND: "deepagents",
+        ANTHROPIC_API_KEY: "sk-test",
+      },
       { runId: "r", runDate: "2026-04-19" },
     );
     expect(c.constructor.name).toBe("DeepAgentCurator");
   });
 
-  it("routes CURATOR=Claude (case-insensitive) to DeepAgentCurator", async () => {
+  it("routes CURATOR=Claude (case-insensitive) to ClaudeCurator", async () => {
     const c = await selectCurator(
       { CURATOR: "Claude", ANTHROPIC_API_KEY: "sk-test" },
       { runId: "r", runDate: "2026-04-19" },
     );
-    expect(c.constructor.name).toBe("DeepAgentCurator");
+    expect(c.constructor.name).toBe("ClaudeCurator");
   });
 
-  it("CURATOR_BACKEND=legacy without CURATOR=claude is ignored (still Mock)", async () => {
+  it("CURATOR_BACKEND=deepagents without CURATOR=claude is ignored (still Mock)", async () => {
     const c = await selectCurator(
-      { CURATOR_BACKEND: "legacy" },
+      { CURATOR_BACKEND: "deepagents" },
       { runId: "r", runDate: "2026-04-19" },
     );
     expect(c.constructor.name).toBe("MockCurator");
   });
 
-  it("rejects malformed CURATOR_CHUNK_THRESHOLD for legacy path", async () => {
+  it("rejects malformed CURATOR_CHUNK_THRESHOLD for default Claude path", async () => {
     await expect(
       selectCurator(
         {
           CURATOR: "claude",
-          CURATOR_BACKEND: "legacy",
           CURATOR_CHUNK_THRESHOLD: "NaN",
           ANTHROPIC_API_KEY: "sk-test",
         },
@@ -94,7 +105,11 @@ describe("selectCurator", () => {
     // a real API key.
     await expect(
       selectCurator(
-        { CURATOR: "claude", DEEPAGENT_TOOL_BUDGET: "-1" },
+        {
+          CURATOR: "claude",
+          CURATOR_BACKEND: "deepagents",
+          DEEPAGENT_TOOL_BUDGET: "-1",
+        },
         { runId: "r", runDate: "2026-04-19" },
       ),
     ).rejects.toThrow(/DEEPAGENT_TOOL_BUDGET/);

@@ -21,25 +21,29 @@
 
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Prefer native `import.meta.resolve` (ESM, Node 20+). Fall back to
 // `createRequire` so the guard also works under Vitest's SSR transform
 // (which doesn't polyfill `import.meta.resolve`) and in any classic CJS
 // harness that might ever import this file.
-const requireFromHere = createRequire(import.meta.url);
-
 function defaultResolve(specifier: string): string {
-  // `import.meta.resolve` may be absent under some test runners.
-  const metaResolve = (import.meta as { resolve?: (s: string) => string })
-    .resolve;
+  const metaResolve = (
+    import.meta as { resolve?: (s: string) => string | Promise<string> }
+  ).resolve;
   if (typeof metaResolve === "function") {
-    return metaResolve(specifier);
+    const url = metaResolve(specifier);
+    // Node 20+ returns a string synchronously. If we ever run under a
+    // runtime where it's still a Promise, fall back — a Promise typed as a
+    // URL would blow up in `fileURLToPath`/`startsWith` with a confusing
+    // stack trace.
+    if (typeof url === "string") return url;
   }
-  // CJS fallback — returns an absolute filesystem path. Normalize to file:
-  // URL so downstream code can handle both uniformly.
-  const absPath = requireFromHere.resolve(specifier);
-  return `file://${absPath}`;
+  // CJS fallback — returns an absolute filesystem path. `pathToFileURL`
+  // percent-encodes spaces and special chars so downstream `fileURLToPath`
+  // round-trips cleanly.
+  const requireFromHere = createRequire(import.meta.url);
+  return pathToFileURL(requireFromHere.resolve(specifier)).href;
 }
 
 export const PINNED_VERSIONS: Readonly<Record<string, string>> = Object.freeze({

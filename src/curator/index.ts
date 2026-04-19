@@ -35,6 +35,7 @@ export type {
 export { SYSTEM_PROMPT, PROMPT_VERSION } from "./prompt.js";
 
 import type { Curator } from "./mockCurator.js";
+import { parsePositiveInt, parsePositiveNumber } from "../env.js";
 
 /** Inputs the factory needs beyond the env map — per-run identifiers. */
 export interface SelectCuratorContext {
@@ -46,16 +47,18 @@ export interface SelectCuratorContext {
  * Curator backend selection (DC1 routing + DC8 rollback toggle).
  *
  * Priority is:
- *   1. `CURATOR=mock` (or any non-"claude" value) → MockCurator.
- *   2. `CURATOR=claude` + `CURATOR_BACKEND=legacy` → preserved ClaudeCurator
- *      (direct @anthropic-ai/sdk path; sunsets 14 days post-merge).
- *   3. `CURATOR=claude` + (anything else) → DeepAgents-backed curator.
+ *   1. `CURATOR=mock` (or any non-"claude" value, including unset) → MockCurator.
+ *   2. `CURATOR=claude` (default backend) → `ClaudeCurator`. This preserves
+ *      the pre-M1 behavior; the direct `@anthropic-ai/sdk` path remains the
+ *      default until the DeepAgents path is promoted in M5.
+ *   3. `CURATOR=claude` + `CURATOR_BACKEND=deepagents` → opt-in DeepAgents
+ *      curator. Throws `NotYetImplementedError` in M1; real implementation
+ *      lands in M2.
  *
  * **Lazy loading (DA-S-02 / DA-S-03):** The DeepAgents module is imported
- * only when the factory actually selects it. Keeping this factory out of
- * the `src/curator/index.ts` top-level re-exports is what makes the lazy
- * path real — tests can `await selectCurator(...)` with `CURATOR=mock` and
- * observe zero LangChain modules in the require graph.
+ * only when the factory actually selects it. Tests can `await selectCurator`
+ * with `CURATOR=mock` or the default Claude path and observe zero LangChain
+ * modules in the require graph.
  */
 export async function selectCurator(
   env: NodeJS.ProcessEnv,
@@ -69,63 +72,38 @@ export async function selectCurator(
   }
 
   const backend = (env.CURATOR_BACKEND ?? "").toLowerCase();
-  if (backend === "legacy") {
-    const [{ ClaudeCurator }, { AnthropicCurationClient }] = await Promise.all([
-      import("./claudeCurator.js"),
-      import("./anthropicClient.js"),
-    ]);
-    return new ClaudeCurator({
-      client: new AnthropicCurationClient(),
-      chunkThreshold: parseOptionalPositiveInt(
-        env.CURATOR_CHUNK_THRESHOLD,
-        50,
-        "CURATOR_CHUNK_THRESHOLD",
-      ),
-      maxUsd: parseOptionalPositiveNumber(
-        env.CURATOR_MAX_USD,
-        1.0,
-        "CURATOR_MAX_USD",
-      ),
+  if (backend === "deepagents") {
+    // Opt-in DeepAgents path. Importing this module runs the version-guard
+    // (DA-Un-05) synchronously at module init — a version-pin drift will
+    // surface here, not mid-chunk.
+    const { DeepAgentCurator, parseDeepAgentConfig } = await import(
+      "./deepagent/index.js"
+    );
+    return new DeepAgentCurator({
+      runId: ctx.runId,
+      runDate: ctx.runDate,
+      config: parseDeepAgentConfig(env),
     });
   }
 
-  // Default Claude path → DeepAgents. Importing this module runs the
-  // version-guard (DA-Un-05) synchronously at module init — a version-pin
-  // drift will surface here, not mid-chunk.
-  const { DeepAgentCurator, parseDeepAgentConfig } = await import(
-    "./deepagent/index.js"
-  );
-  return new DeepAgentCurator({
-    runId: ctx.runId,
-    runDate: ctx.runDate,
-    config: parseDeepAgentConfig(env),
+  // Default Claude path → preserved ClaudeCurator (legacy/direct SDK).
+  // `CURATOR_BACKEND=legacy` is also accepted as an explicit opt-in for the
+  // same path so existing ops runbooks keep working.
+  const [{ ClaudeCurator }, { AnthropicCurationClient }] = await Promise.all([
+    import("./claudeCurator.js"),
+    import("./anthropicClient.js"),
+  ]);
+  return new ClaudeCurator({
+    client: new AnthropicCurationClient(),
+    chunkThreshold: parsePositiveInt(
+      env.CURATOR_CHUNK_THRESHOLD,
+      50,
+      "CURATOR_CHUNK_THRESHOLD",
+    ),
+    maxUsd: parsePositiveNumber(
+      env.CURATOR_MAX_USD,
+      1.0,
+      "CURATOR_MAX_USD",
+    ),
   });
-}
-
-function parseOptionalPositiveInt(
-  raw: string | undefined,
-  fallback: number,
-  name: string,
-): number {
-  if (raw === undefined || raw === "") return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
-    throw new Error(`Invalid env ${name}=${raw} (expected positive integer)`);
-  }
-  return n;
-}
-
-function parseOptionalPositiveNumber(
-  raw: string | undefined,
-  fallback: number,
-  name: string,
-): number {
-  if (raw === undefined || raw === "") return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) {
-    throw new Error(
-      `Invalid env ${name}=${raw} (expected positive number > 0)`,
-    );
-  }
-  return n;
 }

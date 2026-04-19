@@ -17,6 +17,7 @@
 import type { Curator, CuratorMetrics } from "../mockCurator.js";
 import type { SkippedItemRecord } from "../deadletter.js";
 import type { RawItem, ScoredItem } from "../../types.js";
+import { parseBoolFlag, parsePositiveInt } from "../../env.js";
 import {
   assertPinnedVersions,
   VersionDriftError,
@@ -33,7 +34,8 @@ export class NotYetImplementedError extends Error {
     super(
       "runDeepAgentCurator is scaffolded (M1) but not wired to LangGraph yet. " +
         "See docs/specs/deepagents-migration-decomposition.md §3 M2 for the " +
-        "graph-binding epic. To unblock locally, set CURATOR_BACKEND=legacy.",
+        "graph-binding epic. The default Claude path (unset CURATOR_BACKEND, " +
+        "or CURATOR_BACKEND=legacy) still routes to the working ClaudeCurator.",
     );
     this.name = "NotYetImplementedError";
   }
@@ -70,26 +72,6 @@ export const DEEPAGENT_DEFAULTS: DeepAgentConfig = {
   enableLangsmith: false,
   auditToFile: false,
 };
-
-function parsePositiveInt(
-  raw: string | undefined,
-  fallback: number,
-  name: string,
-): number {
-  if (raw === undefined || raw === "") return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
-    throw new Error(
-      `Invalid env ${name}=${raw} (expected positive integer)`,
-    );
-  }
-  return n;
-}
-
-function parseBoolFlag(raw: string | undefined): boolean {
-  // Match the rest of the codebase: "1" turns it on. Anything else is off.
-  return raw === "1";
-}
 
 /**
  * Parse DEEPAGENT_* env vars into a validated config. Throws on malformed

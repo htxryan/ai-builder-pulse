@@ -37,7 +37,10 @@ describe("runDeepAgentCurator (M1 stub)", () => {
       expect.fail("expected throw");
     } catch (err) {
       expect((err as Error).message).toContain("deepagents-migration");
-      expect((err as Error).message).toContain("CURATOR_BACKEND=legacy");
+      // Actionable pointer to the working fallback. Matches either spelling
+      // of the legacy opt-in (unset backend → default ClaudeCurator, or
+      // explicit CURATOR_BACKEND=legacy).
+      expect((err as Error).message).toMatch(/CURATOR_BACKEND/);
     }
   });
 

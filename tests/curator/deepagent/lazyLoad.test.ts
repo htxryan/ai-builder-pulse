@@ -122,6 +122,21 @@ describe("selectCurator lazy-load contract (DA-S-02 / DA-S-03)", () => {
   );
 
   it(
+    "CURATOR=claude (default backend) — DeepAgents not loaded",
+    { timeout: 60_000 },
+    () => {
+      const r = runProbe({
+        CURATOR: "claude",
+        ANTHROPIC_API_KEY: "sk-test",
+      });
+      expect(r.status, `stderr=${r.stderr}\nstdout=${r.stdout}`).toBe(0);
+      expect(r.curator).toBe("ClaudeCurator");
+      const bad = offenders(r.specifiers);
+      expect(bad, bad.join("\n")).toEqual([]);
+    },
+  );
+
+  it(
     "CURATOR=claude + CURATOR_BACKEND=legacy — DeepAgents not loaded",
     { timeout: 60_000 },
     () => {
@@ -138,10 +153,16 @@ describe("selectCurator lazy-load contract (DA-S-02 / DA-S-03)", () => {
   );
 
   it(
-    "CURATOR=claude (default backend) — DeepAgents IS loaded (sanity)",
+    "CURATOR_BACKEND=deepagents — DeepAgents IS loaded (sanity)",
     { timeout: 60_000 },
     () => {
-      const r = runProbe({ CURATOR: "claude" });
+      // M1 sanity: the DeepAgents adapter module itself is in the graph.
+      // Tightening to assert `@langchain/*` specifiers also appear will
+      // come with M2 when the adapter actually imports LangGraph.
+      const r = runProbe({
+        CURATOR: "claude",
+        CURATOR_BACKEND: "deepagents",
+      });
       expect(r.status, `stderr=${r.stderr}\nstdout=${r.stdout}`).toBe(0);
       expect(r.curator).toBe("DeepAgentCurator");
       const loaded = r.specifiers.some((s) =>
