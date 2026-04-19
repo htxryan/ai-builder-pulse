@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import { AnthropicCurationClient } from "../../src/curator/anthropicClient.js";
 import type {
   MessagesParseArgs,
   MessagesParseResult,
 } from "../../src/curator/anthropicClient.js";
+import { MODEL_PIN } from "../../src/curator/prompt.js";
 import type { RawItem } from "../../src/types.js";
 
 function raw(id: string): RawItem {
@@ -111,5 +112,79 @@ describe("AnthropicCurationClient", () => {
     const r = await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
     expect(r.cacheReadInputTokens).toBeUndefined();
     expect(r.cacheCreationInputTokens).toBeUndefined();
+  });
+
+  describe("CURATOR_MODEL_OVERRIDE", () => {
+    const PRIOR = process.env["CURATOR_MODEL_OVERRIDE"];
+    afterEach(() => {
+      if (PRIOR === undefined) delete process.env["CURATOR_MODEL_OVERRIDE"];
+      else process.env["CURATOR_MODEL_OVERRIDE"] = PRIOR;
+    });
+
+    async function captureModel(): Promise<string> {
+      const captured: MessagesParseArgs[] = [];
+      const client = new AnthropicCurationClient({
+        outputFormat: { type: "stub" },
+        messagesParse: async (args): Promise<MessagesParseResult> => {
+          captured.push(args);
+          return {
+            parsed_output: {
+              items: [
+                {
+                  id: "a",
+                  category: "Tools & Launches",
+                  relevanceScore: 0.5,
+                  keep: true,
+                  description:
+                    "A valid description that meets the minimum-length requirement for Zod parse in curation.",
+                },
+              ],
+            },
+            usage: { input_tokens: 10, output_tokens: 5 },
+          };
+        },
+      });
+      await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
+      return captured[0]!.model;
+    }
+
+    it("falls back to MODEL_PIN when unset", async () => {
+      delete process.env["CURATOR_MODEL_OVERRIDE"];
+      expect(await captureModel()).toBe(MODEL_PIN);
+    });
+
+    it("flows an alt-provider model id through to the model call", async () => {
+      process.env["CURATOR_MODEL_OVERRIDE"] = "anthropic/claude-sonnet-4.5";
+      expect(await captureModel()).toBe("anthropic/claude-sonnet-4.5");
+    });
+
+    it("an explicit opts.model still wins over the env override", async () => {
+      process.env["CURATOR_MODEL_OVERRIDE"] = "anthropic/claude-sonnet-4.5";
+      const captured: MessagesParseArgs[] = [];
+      const client = new AnthropicCurationClient({
+        model: "explicit-opts-model",
+        outputFormat: { type: "stub" },
+        messagesParse: async (args): Promise<MessagesParseResult> => {
+          captured.push(args);
+          return {
+            parsed_output: {
+              items: [
+                {
+                  id: "a",
+                  category: "Tools & Launches",
+                  relevanceScore: 0.5,
+                  keep: true,
+                  description:
+                    "A valid description that meets the minimum-length requirement for Zod parse in curation.",
+                },
+              ],
+            },
+            usage: { input_tokens: 10, output_tokens: 5 },
+          };
+        },
+      });
+      await client.call({ systemPrompt: "SYS", rawItems: [raw("a")] });
+      expect(captured[0]!.model).toBe("explicit-opts-model");
+    });
   });
 });

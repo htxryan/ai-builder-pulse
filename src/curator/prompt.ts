@@ -13,6 +13,21 @@ export const PROMPT_VERSION = "2026-04-19.1";
 // this constant so a drift in either one fails the build.
 export const MODEL_PIN = "claude-sonnet-4-6";
 
+// Dev-only escape hatch: when `CURATOR_MODEL_OVERRIDE` is set, BOTH curator
+// backends bind to the override string instead of `MODEL_PIN`. Intended for
+// alternate-provider routing (e.g. `anthropic/claude-sonnet-4.5` via an
+// OpenRouter-compatible `ANTHROPIC_BASE_URL`), cost-constrained demos, or
+// A/B-testing a prior model. Production MUST stay on `MODEL_PIN` — the
+// prompt-cache keys and consistency guarantees assume a fixed model id.
+// Both `anthropicClient.ts` and `deepagent/adapter.ts` call this helper at
+// construction time so override-vs-pin behavior is identical across backends.
+export function resolveCuratorModel(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const override = env["CURATOR_MODEL_OVERRIDE"]?.trim();
+  return override && override.length > 0 ? override : MODEL_PIN;
+}
+
 const CATEGORY_DEFINITIONS = {
   "Tools & Launches":
     "A new developer tool, framework, library, CLI, SDK, or hosted service (including model-provider product launches other than the model itself).",

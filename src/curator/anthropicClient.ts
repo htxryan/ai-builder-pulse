@@ -11,7 +11,7 @@ import {
   type CurationResponse,
 } from "./claudeCurator.js";
 import { curationOutputFormat } from "./curationOutputFormat.js";
-import { MODEL_PIN, formatItemsPayload } from "./prompt.js";
+import { formatItemsPayload, resolveCuratorModel } from "./prompt.js";
 
 export interface AnthropicClientOptions {
   readonly apiKey?: string;
@@ -59,11 +59,10 @@ export type MessagesParseFn = (
   args: MessagesParseArgs,
 ) => Promise<MessagesParseResult>;
 
-// DA-U-07 — consume the shared MODEL_PIN constant. Do not inline a literal
-// here; the consistency test asserts this file sources the model id from
-// `prompt.ts` so both the direct SDK path and the LangChain binding stay
-// aligned.
-const DEFAULT_MODEL = MODEL_PIN;
+// DA-U-07 — consume the shared MODEL_PIN constant via `resolveCuratorModel()`
+// from `prompt.ts`. The helper honors `CURATOR_MODEL_OVERRIDE` for
+// dev/demo/alt-provider routing; both backends (direct SDK + DeepAgents)
+// call the same helper so override behavior never diverges between them.
 const DEFAULT_MAX_TOKENS = 16_000;
 
 export class AnthropicCurationClient implements CurationClient {
@@ -75,7 +74,7 @@ export class AnthropicCurationClient implements CurationClient {
   private readonly outputFormatOverride: unknown;
 
   constructor(opts: AnthropicClientOptions = {}) {
-    this.model = opts.model ?? DEFAULT_MODEL;
+    this.model = opts.model ?? resolveCuratorModel();
     this.maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.outputFormatOverride = opts.outputFormat;
     if (opts.messagesParse) {

@@ -70,10 +70,10 @@ import {
   type CostRates,
 } from "../costModel.js";
 import {
-  MODEL_PIN,
   SYSTEM_PROMPT,
   PROMPT_VERSION,
   formatItemsPayload,
+  resolveCuratorModel,
 } from "../prompt.js";
 
 const DEFAULT_MAX_TOKENS = 16_000;
@@ -906,8 +906,12 @@ function resolveModel(opts: BuildAgentOptions): BaseChatModel {
   if (opts.model) return opts.model;
   // ChatAnthropic reads `ANTHROPIC_API_KEY` from env; the factory validates
   // key presence before selecting the DeepAgents backend in production.
+  // `resolveCuratorModel()` honors `CURATOR_MODEL_OVERRIDE` (dev/demo/alt-
+  // provider escape hatch) and otherwise returns the shared `MODEL_PIN`. The
+  // direct-SDK path uses the same helper — override-vs-pin behavior is
+  // identical across backends by construction.
   return new ChatAnthropic({
-    model: MODEL_PIN,
+    model: resolveCuratorModel(),
     maxTokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
   });
 }
