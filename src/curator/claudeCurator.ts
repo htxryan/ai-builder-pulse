@@ -17,6 +17,10 @@ import type { RawItem, ScoredItem, Source } from "../types.js";
 import { CategorySchema, ScoredItemSchema } from "../types.js";
 import type { SkippedItemRecord } from "./deadletter.js";
 
+// If you change any constraint here (min/max/length), mirror it in
+// `src/curator/curationOutputFormat.ts` — the hand-authored JSON Schema
+// sent over the wire is asserted against these in
+// `tests/curator/curationOutputFormat.test.ts`.
 export const CurationRecordSchema = z.object({
   id: z.string().min(1),
   category: CategorySchema,

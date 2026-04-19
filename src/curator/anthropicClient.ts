@@ -6,9 +6,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { RawItem } from "../types.js";
 import {
-  CurationResponseSchema,
   type CurationCallResult,
   type CurationClient,
+  type CurationResponse,
 } from "./claudeCurator.js";
 import { curationOutputFormat } from "./curationOutputFormat.js";
 import { MODEL_PIN, formatItemsPayload } from "./prompt.js";
@@ -115,7 +115,10 @@ export class AnthropicCurationClient implements CurationClient {
       output_config: { format },
     });
 
-    const parsed = CurationResponseSchema.parse(result.parsed_output);
+    // The format's parse callback already ran CurationResponseSchema.safeParse
+    // and threw on failure — see curationOutputFormat.ts. Cast avoids a
+    // redundant second parse per API call.
+    const parsed = result.parsed_output as CurationResponse;
     const out: CurationCallResult = {
       records: parsed.items,
       inputTokens: result.usage.input_tokens,

@@ -115,4 +115,54 @@ describe("AnthropicCurationClient (mocked fetch)", () => {
     expect(result.inputTokens).toBe(100);
     expect(result.outputTokens).toBe(50);
   });
+
+  it("surfaces a validation error when the model returns malformed JSON", async () => {
+    const badResponse = {
+      id: "msg_fake",
+      type: "message",
+      role: "assistant",
+      model: "claude-sonnet-4-6",
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      content: [
+        {
+          type: "text",
+          // Shape-valid JSON but violates CurationRecordSchema:
+          // unknown category, out-of-range relevanceScore, empty description.
+          text: JSON.stringify({
+            items: [
+              {
+                id: "a",
+                category: "Not A Real Category",
+                relevanceScore: 1.5,
+                keep: true,
+                description: "",
+              },
+            ],
+          }),
+        },
+      ],
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify(badResponse), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    const client = new AnthropicCurationClient({ apiKey: "sk-test-fake" });
+    await expect(
+      client.call({ systemPrompt: "SYS", rawItems: [raw("a")] }),
+    ).rejects.toThrow(/Failed to parse structured output/);
+  });
 });

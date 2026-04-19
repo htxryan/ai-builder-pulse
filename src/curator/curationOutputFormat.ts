@@ -22,6 +22,18 @@ export interface CurationOutputFormat {
   parse(content: string): CurationResponse;
 }
 
+// Numeric/length constraints duplicated from CurationRecordSchema. Exported
+// so a unit test can assert the JSON Schema on the wire matches the Zod
+// source of truth — see tests/curator/curationOutputFormat.test.ts. If you
+// edit CurationRecordSchema, update these too (the test will fail loudly).
+export const CURATION_SCHEMA_CONSTRAINTS = {
+  idMinLength: 1,
+  relevanceScoreMin: 0,
+  relevanceScoreMax: 1,
+  descriptionMinLength: 1,
+  descriptionMaxLength: 600,
+} as const;
+
 // Mirrors CurationResponseSchema. `additionalProperties: false` matches the
 // SDK's `transformJSONSchema` output so behavior is identical to a working
 // `zodOutputFormat()` call.
@@ -37,45 +49,63 @@ const CURATION_JSON_SCHEMA: Record<string, unknown> = {
         additionalProperties: false,
         required: ["id", "category", "relevanceScore", "keep", "description"],
         properties: {
-          id: { type: "string", minLength: 1 },
+          id: {
+            type: "string",
+            minLength: CURATION_SCHEMA_CONSTRAINTS.idMinLength,
+          },
           category: { type: "string", enum: [...CATEGORIES] },
-          relevanceScore: { type: "number", minimum: 0, maximum: 1 },
+          relevanceScore: {
+            type: "number",
+            minimum: CURATION_SCHEMA_CONSTRAINTS.relevanceScoreMin,
+            maximum: CURATION_SCHEMA_CONSTRAINTS.relevanceScoreMax,
+          },
           keep: { type: "boolean" },
-          description: { type: "string", minLength: 1, maxLength: 600 },
+          description: {
+            type: "string",
+            minLength: CURATION_SCHEMA_CONSTRAINTS.descriptionMinLength,
+            maxLength: CURATION_SCHEMA_CONSTRAINTS.descriptionMaxLength,
+          },
         },
       },
     },
   },
 };
 
+function parseCurationContent(content: string): CurationResponse {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(content);
+  } catch (err) {
+    throw new Error(
+      `Failed to parse structured output as JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  const result = CurationResponseSchema.safeParse(raw);
+  if (!result.success) {
+    const issues = result.error.issues
+      .slice(0, 5)
+      .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
+      .join("\n");
+    const more =
+      result.error.issues.length > 5
+        ? `\n  ... and ${result.error.issues.length - 5} more issue(s)`
+        : "";
+    throw new Error(
+      `Failed to parse structured output: ${result.error.message}\nValidation issues:\n${issues}${more}`,
+    );
+  }
+  return result.data;
+}
+
+// Frozen module-level singleton — schema and parse closure don't vary
+// between calls, so there's no reason to allocate a new object per
+// messages.parse() invocation.
+const CURATION_OUTPUT_FORMAT: CurationOutputFormat = Object.freeze({
+  type: "json_schema" as const,
+  schema: CURATION_JSON_SCHEMA,
+  parse: parseCurationContent,
+});
+
 export function curationOutputFormat(): CurationOutputFormat {
-  return {
-    type: "json_schema",
-    schema: CURATION_JSON_SCHEMA,
-    parse(content: string): CurationResponse {
-      let raw: unknown;
-      try {
-        raw = JSON.parse(content);
-      } catch (err) {
-        throw new Error(
-          `Failed to parse structured output as JSON: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-      const result = CurationResponseSchema.safeParse(raw);
-      if (!result.success) {
-        const issues = result.error.issues
-          .slice(0, 5)
-          .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
-          .join("\n");
-        const more =
-          result.error.issues.length > 5
-            ? `\n  ... and ${result.error.issues.length - 5} more issue(s)`
-            : "";
-        throw new Error(
-          `Failed to parse structured output: ${result.error.message}\nValidation issues:\n${issues}${more}`,
-        );
-      }
-      return result.data;
-    },
-  };
+  return CURATION_OUTPUT_FORMAT;
 }
