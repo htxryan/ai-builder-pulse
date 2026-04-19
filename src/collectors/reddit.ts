@@ -17,10 +17,14 @@ export const DEFAULT_SUBREDDITS = [
 
 const USER_AGENT = "ai-builder-pulse/0.1 (by /u/ai-builder-pulse-bot)";
 
+// Reddit occasionally returns posts with a relative, protocol-less, or empty
+// `url` field (e.g. self-posts or API glitches). We accept any string at parse
+// time and normalize in `normalizeRedditUrl` so one bad entry does not kill
+// the entire subreddit batch.
 const RedditPostDataSchema = z.object({
   id: z.string(),
   title: z.string(),
-  url: z.string().url(),
+  url: z.string(),
   permalink: z.string(),
   score: z.number().int(),
   num_comments: z.number().int().nonnegative().default(0),
@@ -31,16 +35,59 @@ const RedditPostDataSchema = z.object({
   stickied: z.boolean().optional(),
 });
 
+// Top-level listing accepts any child shape; individual children are parsed
+// with safeParse so a single malformed record is skipped instead of failing
+// the whole fetch.
 const RedditListingSchema = z.object({
   data: z.object({
-    children: z.array(
-      z.object({
-        kind: z.literal("t3"),
-        data: RedditPostDataSchema,
-      }),
-    ),
+    children: z.array(z.unknown()),
   }),
 });
+
+const RedditChildSchema = z.object({
+  kind: z.literal("t3"),
+  data: RedditPostDataSchema,
+});
+
+/**
+ * Normalize a Reddit post URL into an absolute https URL suitable for
+ * `RawItemSchema` (which enforces `z.string().url()`). Reddit entries can
+ * appear with:
+ *   - relative internal links (`/r/x/comments/…`)
+ *   - empty/whitespace-only `url` fields
+ *   - protocol-less hosts (`reddit.com/…`)
+ *
+ * Returns an absolute URL string, or `null` if normalization cannot produce
+ * something parseable — callers then skip the individual entry.
+ */
+export function normalizeRedditUrl(
+  rawUrl: string,
+  permalink: string,
+): string | null {
+  const trimmed = rawUrl?.trim() ?? "";
+  const permalinkAbs = permalink
+    ? `https://www.reddit.com${permalink.startsWith("/") ? permalink : `/${permalink}`}`
+    : "";
+  const candidates: string[] = [];
+  if (trimmed) {
+    if (trimmed.startsWith("/")) {
+      candidates.push(`https://www.reddit.com${trimmed}`);
+    } else if (/^https?:\/\//i.test(trimmed)) {
+      candidates.push(trimmed);
+    } else {
+      candidates.push(`https://${trimmed}`);
+    }
+  }
+  if (permalinkAbs) candidates.push(permalinkAbs);
+  for (const c of candidates) {
+    try {
+      return new URL(c).toString();
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
 
 type RedditPost = z.infer<typeof RedditPostDataSchema>;
 
@@ -113,7 +160,24 @@ async function fetchSubredditListing(
   if (!res.ok) throw new Error(`reddit ${subreddit} http ${res.status}`);
   const json = await res.json();
   const parsed = RedditListingSchema.parse(json);
-  return parsed.data.children.map((c) => c.data);
+  const posts: RedditPost[] = [];
+  let skipped = 0;
+  for (const child of parsed.data.children) {
+    const parsedChild = RedditChildSchema.safeParse(child);
+    if (parsedChild.success) {
+      posts.push(parsedChild.data.data);
+    } else {
+      skipped += 1;
+    }
+  }
+  if (skipped > 0) {
+    log.warn("reddit listing child skipped", {
+      source: "reddit",
+      subreddit,
+      skipped,
+    });
+  }
+  return posts;
 }
 
 export async function mapRedditPost(
@@ -122,10 +186,20 @@ export async function mapRedditPost(
   resolveImpl: typeof resolveRedirects,
 ): Promise<RawItem | null> {
   if (post.stickied || post.is_self) return null;
-  let url = post.url;
+  const normalized = normalizeRedditUrl(post.url, post.permalink);
+  if (!normalized) {
+    log.warn("reddit post url unnormalizable", {
+      source: "reddit",
+      subreddit: post.subreddit,
+      id: post.id,
+      rawUrl: post.url,
+    });
+    return null;
+  }
+  let url = normalized;
   let sourceUrl: string | undefined;
   try {
-    const resolved = await resolveImpl(post.url, { signal: ctx.abortSignal });
+    const resolved = await resolveImpl(url, { signal: ctx.abortSignal });
     url = resolved.url;
     sourceUrl = resolved.sourceUrl;
   } catch (err) {

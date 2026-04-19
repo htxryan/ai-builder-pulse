@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   RedditCollector,
+  normalizeRedditUrl,
   pickRedditMode,
 } from "../../src/collectors/reddit.js";
 import type { CollectorContext } from "../../src/collectors/types.js";
@@ -168,6 +169,178 @@ describe("RedditCollector — per-subreddit failure isolation", () => {
       // Failure from the other sub is captured, not swallowed.
       expect(ctx.metrics.partialFailures).toHaveLength(1);
       expect(ctx.metrics.partialFailures[0]!.scope).toBe("Broken");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+// Regression: r/mlops (and others) occasionally return entries with
+// relative/empty/protocol-less URLs. The top-level listing must not throw on
+// those, and the collector should still yield RawItems for the well-formed
+// entries in the same batch.
+describe("normalizeRedditUrl", () => {
+  it("prepends host to a relative /r/... URL", () => {
+    expect(
+      normalizeRedditUrl("/r/mlops/comments/abc/foo/", "/r/mlops/comments/abc/foo/"),
+    ).toBe("https://www.reddit.com/r/mlops/comments/abc/foo/");
+  });
+
+  it("falls back to permalink when url is whitespace-only", () => {
+    expect(normalizeRedditUrl("   ", "/r/mlops/comments/xyz/bar/")).toBe(
+      "https://www.reddit.com/r/mlops/comments/xyz/bar/",
+    );
+  });
+
+  it("adds https:// scheme to a protocol-less host", () => {
+    expect(normalizeRedditUrl("reddit.com/r/mlops/comments/q/", "/r/mlops/comments/q/"))
+      .toBe("https://reddit.com/r/mlops/comments/q/");
+  });
+
+  it("returns null when neither url nor permalink is usable", () => {
+    expect(normalizeRedditUrl("", "")).toBeNull();
+  });
+});
+
+describe("RedditCollector — malformed URL tolerance (r/mlops regression)", () => {
+  const MALFORMED_LISTING = JSON.stringify({
+    kind: "Listing",
+    data: {
+      after: null,
+      children: [
+        {
+          kind: "t3",
+          data: {
+            id: "good1",
+            title: "Valid post",
+            url: "https://example.com/ok",
+            permalink: "/r/mlops/comments/good1/valid/",
+            score: 10,
+            num_comments: 1,
+            subreddit: "mlops",
+            created_utc: 1744930800,
+            is_self: false,
+            stickied: false,
+          },
+        },
+        {
+          kind: "t3",
+          data: {
+            id: "rel1",
+            title: "Relative URL post",
+            url: "/r/mlops/comments/rel1/relative/",
+            permalink: "/r/mlops/comments/rel1/relative/",
+            score: 5,
+            num_comments: 0,
+            subreddit: "mlops",
+            created_utc: 1744930800,
+            is_self: false,
+            stickied: false,
+          },
+        },
+        {
+          kind: "t3",
+          data: {
+            id: "empty1",
+            title: "Empty URL post",
+            url: "   ",
+            permalink: "/r/mlops/comments/empty1/empty/",
+            score: 3,
+            num_comments: 0,
+            subreddit: "mlops",
+            created_utc: 1744930800,
+            is_self: false,
+            stickied: false,
+          },
+        },
+        {
+          kind: "t3",
+          data: {
+            id: "noproto1",
+            title: "Protocol-less URL post",
+            url: "reddit.com/r/mlops/comments/noproto1/",
+            permalink: "/r/mlops/comments/noproto1/np/",
+            score: 7,
+            num_comments: 0,
+            subreddit: "mlops",
+            created_utc: 1744930800,
+            is_self: false,
+            stickied: false,
+          },
+        },
+      ],
+    },
+  });
+
+  it("emits valid RawItems for relative, empty, and protocol-less URL entries", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl: typeof fetch = async () =>
+        new Response(MALFORMED_LISTING, { status: 200 });
+      const c = new RedditCollector({
+        fetchImpl,
+        resolveImpl: async (u) => ({ url: u }),
+        subreddits: ["mlops"],
+      });
+      const ctx = ctxWith({});
+      const items = await c.fetch(ctx);
+      // All four entries should survive; none should be dropped because of URL shape.
+      expect(items.length).toBe(4);
+      expect(items.map((i) => i.id).sort()).toEqual([
+        "reddit-empty1",
+        "reddit-good1",
+        "reddit-noproto1",
+        "reddit-rel1",
+      ]);
+      for (const it of items) {
+        expect(() => new URL(it.url)).not.toThrow();
+      }
+      expect(ctx.metrics.partialFailures).toEqual([]);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("skips only the malformed child, not the whole subreddit batch", async () => {
+    // Listing where one child is structurally broken (missing required fields),
+    // but others are fine. The broken one should be dropped silently; the rest
+    // should still produce RawItems.
+    const PARTIAL_BROKEN = JSON.stringify({
+      kind: "Listing",
+      data: {
+        after: null,
+        children: [
+          { kind: "t3", data: { nope: true } }, // malformed — missing required fields
+          {
+            kind: "t3",
+            data: {
+              id: "ok1",
+              title: "Fine post",
+              url: "https://example.com/fine",
+              permalink: "/r/mlops/comments/ok1/fine/",
+              score: 10,
+              num_comments: 0,
+              subreddit: "mlops",
+              created_utc: 1744930800,
+              is_self: false,
+              stickied: false,
+            },
+          },
+        ],
+      },
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const fetchImpl: typeof fetch = async () =>
+        new Response(PARTIAL_BROKEN, { status: 200 });
+      const c = new RedditCollector({
+        fetchImpl,
+        resolveImpl: async (u) => ({ url: u }),
+        subreddits: ["mlops"],
+      });
+      const items = await c.fetch(ctxWith({}));
+      expect(items.length).toBe(1);
+      expect(items[0]!.id).toBe("reddit-ok1");
     } finally {
       warnSpy.mockRestore();
     }
