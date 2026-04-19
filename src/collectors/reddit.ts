@@ -64,7 +64,7 @@ export function normalizeRedditUrl(
   rawUrl: string,
   permalink: string,
 ): string | null {
-  const trimmed = rawUrl?.trim() ?? "";
+  const trimmed = rawUrl.trim();
   const permalinkAbs = permalink
     ? `https://www.reddit.com${permalink.startsWith("/") ? permalink : `/${permalink}`}`
     : "";
@@ -209,7 +209,8 @@ export async function mapRedditPost(
     log.warn("reddit redirect resolve failed", {
       source: "reddit",
       subreddit: post.subreddit,
-      url: post.url,
+      url,
+      rawUrl: post.url,
       errClass: classifyRedirectError(err),
       error: err instanceof Error ? err.message : String(err),
     });
@@ -229,7 +230,7 @@ export async function mapRedditPost(
       subreddit: post.subreddit,
       upvotes: post.score,
       numComments: post.num_comments,
-      permalink: `https://reddit.com${post.permalink}`,
+      permalink: `https://www.reddit.com${post.permalink}`,
     },
   });
   return parsed.success ? parsed.data : null;
