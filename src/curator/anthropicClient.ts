@@ -11,7 +11,7 @@ import {
   type CurationCallResult,
   type CurationClient,
 } from "./claudeCurator.js";
-import { MODEL_PIN } from "./prompt.js";
+import { MODEL_PIN, formatItemsPayload } from "./prompt.js";
 
 export interface AnthropicClientOptions {
   readonly apiKey?: string;
@@ -66,42 +66,6 @@ export type MessagesParseFn = (
 // aligned.
 const DEFAULT_MODEL = MODEL_PIN;
 const DEFAULT_MAX_TOKENS = 16_000;
-
-function summarizeMetadata(item: RawItem): string {
-  const m = item.metadata;
-  switch (m.source) {
-    case "hn":
-      return `points=${m.points ?? "?"} comments=${m.numComments ?? "?"}`;
-    case "github-trending":
-      return `repo=${m.repoFullName} stars=${m.stars ?? "?"} starsToday=${m.starsToday ?? "?"} lang=${m.language ?? "?"}`;
-    case "reddit":
-      return `r/${m.subreddit} upvotes=${m.upvotes ?? "?"} comments=${m.numComments ?? "?"}`;
-    case "rss":
-      return `feed=${m.feedUrl} author=${m.author ?? "?"}`;
-    case "twitter":
-      return `@${m.handle} likes=${m.likes ?? "?"}`;
-    case "mock":
-      return "mock";
-  }
-}
-
-function formatItemsPayload(items: readonly RawItem[]): string {
-  const lines: string[] = [];
-  lines.push(
-    `You have ${items.length} RawItems to curate. Return EXACTLY ${items.length} records in items[].`,
-  );
-  lines.push("");
-  for (const item of items) {
-    lines.push(`---`);
-    lines.push(`id: ${item.id}`);
-    lines.push(`source: ${item.source}`);
-    lines.push(`title: ${item.title}`);
-    lines.push(`url: ${item.url}`);
-    lines.push(`publishedAt: ${item.publishedAt}`);
-    lines.push(`metadata: ${summarizeMetadata(item)}`);
-  }
-  return lines.join("\n");
-}
 
 export class AnthropicCurationClient implements CurationClient {
   private readonly messagesParse: MessagesParseFn;

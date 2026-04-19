@@ -2,6 +2,7 @@
 // changes through code review. Prompt version is embedded in the constant and
 // logged at runtime so prod behavior is traceable to a specific revision.
 
+import type { RawItem } from "../types.js";
 import { CATEGORIES } from "../types.js";
 
 export const PROMPT_VERSION = "2026-04-18.1";
@@ -54,3 +55,44 @@ CRITICAL RULES:
 4. The response MUST satisfy the provided JSON schema. Fields must be lowercase-typed per the schema; category string must match exactly.
 
 Prompt version: ${PROMPT_VERSION}`;
+
+// Shared formatting for the curator user-turn payload. Both the direct-SDK
+// path (`anthropicClient.ts`) and the LangChain binding (`deepagent/adapter.ts`)
+// consume this so the model sees a byte-identical item representation
+// regardless of backend — a drift here would invalidate prompt caching and
+// make backend-comparison A/Bs noisy.
+export function summarizeMetadata(item: RawItem): string {
+  const m = item.metadata;
+  switch (m.source) {
+    case "hn":
+      return `points=${m.points ?? "?"} comments=${m.numComments ?? "?"}`;
+    case "github-trending":
+      return `repo=${m.repoFullName} stars=${m.stars ?? "?"} starsToday=${m.starsToday ?? "?"} lang=${m.language ?? "?"}`;
+    case "reddit":
+      return `r/${m.subreddit} upvotes=${m.upvotes ?? "?"} comments=${m.numComments ?? "?"}`;
+    case "rss":
+      return `feed=${m.feedUrl} author=${m.author ?? "?"}`;
+    case "twitter":
+      return `@${m.handle} likes=${m.likes ?? "?"}`;
+    case "mock":
+      return "mock";
+  }
+}
+
+export function formatItemsPayload(items: readonly RawItem[]): string {
+  const lines: string[] = [];
+  lines.push(
+    `You have ${items.length} RawItems to curate. Return EXACTLY ${items.length} records in items[].`,
+  );
+  lines.push("");
+  for (const item of items) {
+    lines.push(`---`);
+    lines.push(`id: ${item.id}`);
+    lines.push(`source: ${item.source}`);
+    lines.push(`title: ${item.title}`);
+    lines.push(`url: ${item.url}`);
+    lines.push(`publishedAt: ${item.publishedAt}`);
+    lines.push(`metadata: ${summarizeMetadata(item)}`);
+  }
+  return lines.join("\n");
+}
