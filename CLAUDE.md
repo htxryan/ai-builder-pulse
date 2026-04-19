@@ -1,4 +1,3 @@
-<!-- GSD:project-start source:PROJECT.md -->
 ## Project
 
 **AI Builder Pulse**
@@ -15,9 +14,7 @@ A fully automated daily newsletter for software engineers building AI-powered to
 - **Data**: Must use APIs and RSS, not browser automation (GitHub Actions environment)
 - **Quality**: Every link must be verified from actual source data — no hallucinated URLs
 - **Freshness**: Content must be from last 24 hours only
-<!-- GSD:project-end -->
 
-<!-- GSD:stack-start source:research/STACK.md -->
 ## Technology Stack
 
 This project is **TypeScript on Node.js**, executed directly via `tsx` without
@@ -102,25 +99,18 @@ No build step is required for local runs (`tsx` executes TS directly).
 | zod | 3.23 | `@anthropic-ai/sdk` structured outputs expect zod v3. |
 | @anthropic-ai/sdk | 0.90 | `messages.parse` API GA. |
 | pnpm | 9.12 | Pinned via `packageManager` — mismatches on CI runners are loud, not silent. |
-<!-- GSD:stack-end -->
 
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
 Conventions not yet established. Will populate as patterns emerge during development.
-<!-- GSD:conventions-end -->
 
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
 Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
 
-<!-- GSD:skills-start source:skills/ -->
 ## Project Skills
 
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, or `.github/skills/` with a `SKILL.md` index file.
-<!-- GSD:skills-end -->
 
 ## Compound-Agent Workflow
 
