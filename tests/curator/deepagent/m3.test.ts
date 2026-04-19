@@ -123,7 +123,7 @@ describe("DeepAgent curator — M3 cost ceiling", () => {
   });
 
   it("throws CostCeilingError at the per-run total even when no single chunk trips", async () => {
-    // 4 chunks, each $0.30 → per-chunk ceiling $0.50 (0.50/4*2) fits;
+    // 4 chunks, each $0.30 → per-chunk ceiling $0.50 (1.0/4*2) fits;
     // total $1.20 exceeds maxUsd=1.00 → per-run check fires.
     const items = Array.from({ length: 8 }, (_, i) => rawItem(i));
     // 100_000 input tokens per chunk * $3/M = $0.30

@@ -218,18 +218,24 @@ export async function runDeepAgentCurator(
 }
 
 /**
- * Internal variant that additionally returns `CuratorMetrics`. Kept non-
- * exported from the public surface (re-exported only to the
- * `DeepAgentCurator` class and the M3 test file) so external callers stay
- * on the stable `ScoredItem[]` signature.
+ * Internal variant that additionally returns `CuratorMetrics` and the
+ * merge-time deadletter. Exported (not just module-private) so the
+ * `DeepAgentCurator` class and the M3 test file can read the extra data
+ * without the public `ScoredItem[]` signature changing. The signature here
+ * is NOT a stability contract — callers outside this module should bind to
+ * `runDeepAgentCurator` or `DeepAgentCurator.curate` + `lastMetrics()`.
  */
 export async function runDeepAgentCuratorInternal(
   items: readonly RawItem[],
   ctx: RunDeepAgentCuratorContext,
-): Promise<{ scored: ScoredItem[]; metrics: CuratorMetrics | undefined }> {
+): Promise<{
+  scored: ScoredItem[];
+  metrics: CuratorMetrics | undefined;
+  skipped: readonly SkippedItemRecord[];
+}> {
   const cfg = ctx.config ?? DEEPAGENT_DEFAULTS;
   if (items.length === 0) {
-    return { scored: [], metrics: undefined };
+    return { scored: [], metrics: undefined, skipped: [] };
   }
 
   const { runAdapterChunk } = await import("./adapter.js");
@@ -264,6 +270,7 @@ export async function runDeepAgentCuratorInternal(
   let totalCacheRead = 0;
   let totalCacheCreation = 0;
   const allScored: ScoredItem[] = [];
+  const allSkipped: SkippedItemRecord[] = [];
 
   // DA-O-02: default maxConcurrentChunks=1 for M3 — prompt caching prefers
   // sequential chunks (cache creates on chunk 0, reads on chunks 1..N).
@@ -273,7 +280,7 @@ export async function runDeepAgentCuratorInternal(
   for (let i = 0; i < chunks.length; i += 1) {
     const chunk = chunks[i]!;
     const chunkIdx = i;
-    const { scored, usage } = await runChunkWithRetry(
+    const { scored, usage, skipped } = await runChunkWithRetry(
       chunk,
       chunkIdx,
       cfg,
@@ -287,6 +294,7 @@ export async function runDeepAgentCuratorInternal(
     totalOutput += usage.outputTokens;
     totalCacheRead += usage.cacheReadInputTokens;
     totalCacheCreation += usage.cacheCreationInputTokens;
+    if (skipped.length > 0) allSkipped.push(...skipped);
 
     // Apportion per-source.
     const srcCounts: Partial<Record<Source, number>> = {};
@@ -357,7 +365,7 @@ export async function runDeepAgentCuratorInternal(
     promptVersion: PROMPT_VERSION,
   });
 
-  return { scored: allScored, metrics };
+  return { scored: allScored, metrics, skipped: allSkipped };
 }
 
 /**
@@ -375,7 +383,11 @@ async function runChunkWithRetry(
   perChunkCeilingUsd: number,
   costRates: { inputCostPerMTok: number; outputCostPerMTok: number },
   runAdapterChunk: (typeof import("./adapter.js"))["runAdapterChunk"],
-): Promise<{ scored: readonly ScoredItem[]; usage: ChunkUsage }> {
+): Promise<{
+  scored: readonly ScoredItem[];
+  usage: ChunkUsage;
+  skipped: readonly SkippedItemRecord[];
+}> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= cfg.maxChunkRetries; attempt += 1) {
     try {
@@ -398,7 +410,11 @@ async function runChunkWithRetry(
         },
         overrides,
       );
-      return { scored: result.scored, usage: result.usage };
+      return {
+        scored: result.scored,
+        usage: result.usage,
+        skipped: result.skipped,
+      };
     } catch (err) {
       if (!isRetryableChunkError(err)) throw err;
       lastErr = err;
@@ -422,23 +438,26 @@ async function runChunkWithRetry(
 
 /**
  * Thin class wrapper so the curator factory can hand back an object
- * satisfying the `Curator` interface. M3 populates `lastMetrics` /
- * `lastSkipped`; `lastSkipped` returns empty until M4 wires the merge-time
- * deadletter.
+ * satisfying the `Curator` interface. M3 populates `lastMetrics` and
+ * `lastSkipped` (the merge-time deadletter — items that the count-invariant
+ * accepted but `ScoredItemSchema` rejected at merge time, mirroring
+ * `ClaudeCurator`).
  */
 export class DeepAgentCurator implements Curator {
   private _lastMetrics: CuratorMetrics | undefined;
+  private _lastSkipped: readonly SkippedItemRecord[] = [];
 
   constructor(
     private readonly runCtx: RunDeepAgentCuratorContext,
   ) {}
 
   async curate(items: RawItem[]): Promise<ScoredItem[]> {
-    const { scored, metrics } = await runDeepAgentCuratorInternal(
+    const { scored, metrics, skipped } = await runDeepAgentCuratorInternal(
       items,
       this.runCtx,
     );
     this._lastMetrics = metrics;
+    this._lastSkipped = skipped;
     return scored;
   }
 
@@ -447,6 +466,6 @@ export class DeepAgentCurator implements Curator {
   }
 
   lastSkipped(): readonly SkippedItemRecord[] {
-    return [];
+    return this._lastSkipped;
   }
 }

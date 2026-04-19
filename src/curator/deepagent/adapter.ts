@@ -50,6 +50,7 @@ import { log } from "../../log.js";
 import { OrchestratorStageError } from "../../errors.js";
 import type { RawItem, ScoredItem } from "../../types.js";
 import { ScoredItemSchema } from "../../types.js";
+import type { SkippedItemRecord } from "../deadletter.js";
 import {
   CostCeilingError,
   CountInvariantError,
@@ -163,6 +164,15 @@ export interface ChunkResult {
   readonly scored: readonly ScoredItem[];
   readonly usage: ChunkUsage;
   readonly estimatedUsd: number;
+  /**
+   * Items the count-invariant accepted but `ScoredItemSchema.parse` rejected
+   * at merge time — for example, a record whose category passed the curator
+   * schema but failed the stricter ScoredItem bounds. Mirrors
+   * `ClaudeCurator.lastSkipped()` so backend parity holds when an operator
+   * flips `CURATOR_BACKEND` (P2 review parity fix). The chunk does NOT abort;
+   * rejected items are written to the deadletter by the caller.
+   */
+  readonly skipped: readonly SkippedItemRecord[];
 }
 
 function resolveModel(opts: BuildAgentOptions): BaseChatModel {
@@ -217,6 +227,7 @@ export function buildCurationAgent(
 // call site here never forms a `PromptCachingMiddlewareConfig` value
 // explicitly. Documented as a single localized workaround: if this fails
 // after a LangChain upgrade, swap to a named typed variable.
+// Re-evaluate on next @langchain/* bump — see ai-builder-pulse-tli.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildCachingMiddleware(): any {
   return anthropicPromptCachingMiddleware(
@@ -282,9 +293,10 @@ function assertChunkIds(
 function mergeToScoredItems(
   items: readonly RawItem[],
   records: readonly CurationRecord[],
-): ScoredItem[] {
+): { scored: ScoredItem[]; skipped: SkippedItemRecord[] } {
   const recById = new Map(records.map((r) => [r.id, r]));
-  const out: ScoredItem[] = [];
+  const scored: ScoredItem[] = [];
+  const skipped: SkippedItemRecord[] = [];
   for (const raw of items) {
     const rec = recById.get(raw.id);
     if (!rec) {
@@ -295,20 +307,35 @@ function mergeToScoredItems(
       // loudly instead of silently dropping items.
       throw new CountInvariantError(items.length, records.length);
     }
-    // Full ScoredItemSchema parse — catches any drift where the record's
-    // category or relevanceScore would deserialize but fail the stricter
-    // ScoredItem bounds.
-    out.push(
-      ScoredItemSchema.parse({
-        ...raw,
-        category: rec.category,
-        relevanceScore: rec.relevanceScore,
-        keep: rec.keep,
-        description: rec.description,
-      }),
-    );
+    // safeParse + deadletter — backend parity with ClaudeCurator
+    // (claudeCurator.ts:270-291). A `parse` here would let a single
+    // category/score drift abort the whole chunk, which the retry loop then
+    // burns 3 attempts on for a deterministic schema failure. Mirror legacy:
+    // skip the offending item, keep the rest, surface via deadletter.
+    const parsed = ScoredItemSchema.safeParse({
+      ...raw,
+      category: rec.category,
+      relevanceScore: rec.relevanceScore,
+      keep: rec.keep,
+      description: rec.description,
+    });
+    if (parsed.success) {
+      scored.push(parsed.data);
+    } else {
+      const issue = parsed.error.issues[0];
+      skipped.push({
+        rawItem: raw,
+        zodPath: issue?.path.join(".") ?? "",
+        reason: issue?.message ?? "ScoredItemSchema validation failed",
+      });
+      log.warn("deepagent skipped item (zod merge failure)", {
+        id: raw.id,
+        zodPath: issue?.path.join("."),
+        reason: issue?.message,
+      });
+    }
   }
-  return out;
+  return { scored, skipped };
 }
 
 /**
@@ -333,7 +360,7 @@ interface UsageBearingMessage {
   };
 }
 
-function extractUsage(result: unknown): ChunkUsage {
+function extractUsage(result: unknown, ctx?: AdapterContext): ChunkUsage {
   const messages: readonly UsageBearingMessage[] =
     typeof result === "object" &&
     result !== null &&
@@ -362,6 +389,16 @@ function extractUsage(result: unknown): ChunkUsage {
       };
     }
   }
+  // No `usage_metadata` on any AI message in the result. Without usage,
+  // `chunkUsd === 0` so the per-chunk cost ceiling can never fire — DA-U-11
+  // is silently unenforceable for this chunk. Emit a warning so a regression
+  // (model-id change, @langchain/anthropic version drift) is observable
+  // instead of invisible.
+  log.warn("deepagent extractUsage: no usage_metadata found", {
+    runId: ctx?.runId,
+    chunkIdx: ctx?.chunkIdx ?? 0,
+    note: "cost ceiling unenforceable for this chunk (DA-U-11)",
+  });
   return {
     inputTokens: 0,
     outputTokens: 0,
@@ -403,6 +440,7 @@ export async function runAdapterChunk(
         cacheCreationInputTokens: 0,
       },
       estimatedUsd: 0,
+      skipped: [],
     };
   }
 
@@ -424,7 +462,7 @@ export async function runAdapterChunk(
     { recursionLimit: maxIterations },
   );
 
-  const usage = extractUsage(result);
+  const usage = extractUsage(result, ctx);
   const chunkUsd = estimateUsd(
     usage.inputTokens,
     usage.outputTokens,
@@ -478,19 +516,20 @@ export async function runAdapterChunk(
   // E-05 — the count-invariant guard. Must run BEFORE merging so the
   // thrown error carries the expected/actual pair the orchestrator logs.
   assertChunkIds(items, records);
-  const scored = mergeToScoredItems(items, records);
+  const { scored, skipped } = mergeToScoredItems(items, records);
   log.info("deepagent adapter done", {
     runId: ctx.runId,
     chunkIdx: ctx.chunkIdx ?? 0,
     itemCount: items.length,
     kept: scored.filter((s) => s.keep).length,
+    skipped: skipped.length,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     cacheReadInputTokens: usage.cacheReadInputTokens,
     cacheCreationInputTokens: usage.cacheCreationInputTokens,
     estimatedUsd: chunkUsd,
   });
-  return { scored, usage, estimatedUsd: chunkUsd };
+  return { scored, usage, estimatedUsd: chunkUsd, skipped };
 }
 
 /**

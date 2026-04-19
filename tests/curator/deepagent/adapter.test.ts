@@ -208,6 +208,31 @@ describe("DeepAgent adapter — graph construction (DA-U-04)", () => {
     // M3/M4 will exercise node-level details.
     expect(agent.graph).toBeDefined();
   });
+
+  it("attaches the Anthropic prompt-cache middleware on the prod path (DA-U-09)", () => {
+    // Structural check — the M3 cost-cache test uses fakeModel that bypasses
+    // the actual middleware (it accepts pre-baked usage_metadata), so nothing
+    // there fails if `buildCachingMiddleware` is silently dropped. This test
+    // asserts the agent's options carry a non-empty middleware array, so a
+    // refactor that defaults `disableCaching: true` or forgets to push the
+    // middleware regresses DA-U-09 loudly at compile-test time.
+    const model = fakeModel();
+    const agent = buildCurationAgent({ model }); // default: caching enabled
+    const opts = (agent as unknown as {
+      options?: { middleware?: unknown[] };
+    }).options;
+    expect(opts).toBeDefined();
+    expect(Array.isArray(opts!.middleware)).toBe(true);
+    expect(opts!.middleware!.length).toBeGreaterThan(0);
+
+    // And the inverse — the explicit opt-out used by adapter tests must
+    // produce an empty middleware list, otherwise the "off" case is a lie.
+    const agentOff = buildCurationAgent({ model, disableCaching: true });
+    const optsOff = (agentOff as unknown as {
+      options?: { middleware?: unknown[] };
+    }).options;
+    expect(optsOff!.middleware!.length).toBe(0);
+  });
 });
 
 describe("DeepAgent adapter — runDeepAgentCurator wiring", () => {
