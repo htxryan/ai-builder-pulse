@@ -77,8 +77,16 @@ import {
 } from "../prompt.js";
 
 const DEFAULT_MAX_TOKENS = 16_000;
-/** DA-E-04 default. Also quoted in src/curator/deepagent/index.ts. */
-const DEFAULT_TOOL_BUDGET = 8;
+/**
+ * DA-E-04 default. Re-exported so `index.ts` (which reads the env override)
+ * can keep its `DEEPAGENT_DEFAULTS.toolBudget` aligned without a drift
+ * comment — a single constant is the source of truth.
+ */
+export const DEFAULT_TOOL_BUDGET = 8;
+/** User-Agent sent on fetchUrlStatus HEAD/GET. CDNs (Cloudflare, Fastly)
+ * 403 requests without a UA; bare requests produced spurious errors on
+ * legitimately reachable URLs. */
+const FETCH_USER_AGENT = "ai-builder-pulse/1.0 (+https://github.com/ryan-wh/ai-builder-pulse)";
 /** DA-Un-07. Hard cap on scrubbed titleText returned to the agent. */
 const TITLE_TEXT_MAX_CHARS = 128;
 /** Spec §4.1 body-handling clause — GET reads only the first N bytes. */
@@ -272,14 +280,65 @@ function hashUrl(u: string): string {
   return createHash("sha256").update(u).digest("hex").slice(0, 32);
 }
 
-/** Build the normalized URL allowlist for a chunk. Includes url + sourceUrl. */
+/**
+ * Reject private / loopback / link-local / multicast hosts. RawItem URLs
+ * come from untrusted collectors (RSS, Reddit), so a malicious feed could
+ * publish `http://169.254.169.254/...` and — absent this filter — have it
+ * land in the allowlist unchallenged. The manual-redirect SSRF guard only
+ * triggers on 3xx; the *initial* fetch already targets the internal host.
+ * Filtering at allowlist-build time removes the attack surface entirely.
+ */
+function isPrivateOrLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h === "ip6-localhost" || h === "ip6-loopback") {
+    return true;
+  }
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h)) {
+    const parts = h.split(".").map((p) => Number(p));
+    if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) {
+      return true;
+    }
+    const [a, b] = parts as [number, number, number, number];
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a >= 224) return true;
+    return false;
+  }
+  if (h === "::" || h === "::1") return true;
+  const mapped = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isPrivateOrLoopbackHost(mapped[1]!);
+  if (/^fe[89ab][0-9a-f]?:/.test(h)) return true;
+  if (/^f[cd][0-9a-f]{2}:/.test(h)) return true;
+  return false;
+}
+
+function canonicalIfPublic(raw: string): string | null {
+  const canon = normalizeUrl(raw);
+  if (!canon) return null;
+  let host: string;
+  try {
+    host = new URL(canon).hostname;
+  } catch {
+    return null;
+  }
+  if (isPrivateOrLoopbackHost(host)) return null;
+  return canon;
+}
+
+/**
+ * Build the normalized URL allowlist for a chunk. Includes url + sourceUrl.
+ * Skips any URL whose host resolves to a private / loopback / link-local
+ * IP (SSRF hardening — see `isPrivateOrLoopbackHost`).
+ */
 function buildUrlAllowlist(chunk: readonly RawItem[]): Set<string> {
   const set = new Set<string>();
   for (const item of chunk) {
-    const a = normalizeUrl(item.url);
+    const a = canonicalIfPublic(item.url);
     if (a) set.add(a);
     if (item.sourceUrl) {
-      const b = normalizeUrl(item.sourceUrl);
+      const b = canonicalIfPublic(item.sourceUrl);
       if (b) set.add(b);
     }
   }
@@ -304,7 +363,10 @@ export function scrubTitleText(raw: string | null | undefined): string | null {
   let s = raw;
   s = s.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "");
   s = s.replace(/<script\b[^>]*>/gi, "");
-  s = s.replace(/\[([^\]]*)\]\((?:https?:\/\/[^\s)]+)\)/gi, "$1");
+  // Broadened markdown link match: `[label](anything-no-space-or-close-paren)`.
+  // The prior `https?://...` restriction left `mailto:`, `javascript:`, and
+  // relative `(./path)` links dangling bracket noise in the output.
+  s = s.replace(/\[([^\]]*)\]\([^\s)]+\)/g, "$1");
   s = s.replace(/https?:\/\/\S+/gi, "");
   // Strip zero-width + bidirectional override chars. The injection-resistance
   // contract is the prompt directive, not regex — but these characters
@@ -314,8 +376,81 @@ export function scrubTitleText(raw: string | null | undefined): string | null {
   s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, "");
   s = s.replace(/\s+/g, " ").trim();
   if (s.length === 0) return null;
-  if (s.length > TITLE_TEXT_MAX_CHARS) s = s.slice(0, TITLE_TEXT_MAX_CHARS);
+  if (s.length > TITLE_TEXT_MAX_CHARS) {
+    // Codepoint-aware slice. `String.prototype.slice` is UTF-16-unit-based;
+    // splitting between a high/low surrogate of an emoji or supplementary
+    // character leaves a lone surrogate that `JSON.stringify` serializes
+    // as `\uDxxx`, producing garbled output. Spreading into an array
+    // iterates codepoints, so the resulting string is always well-formed.
+    const cps = [...s];
+    if (cps.length > TITLE_TEXT_MAX_CHARS) {
+      s = cps.slice(0, TITLE_TEXT_MAX_CHARS).join("");
+    }
+  }
   return s;
+}
+
+/**
+ * Minimal named-entity map for characters that commonly appear in page
+ * titles. Deliberately small — we pull in the most frequent typographic
+ * entities (em-dash, curly quotes, ellipsis, nbsp, copyright, …) so the
+ * agent gets human-readable text instead of raw `&mdash;` noise. Full
+ * HTML5 entity coverage would justify a dependency; this is the minimal
+ * set that materially improves curation signal without one.
+ */
+const NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  copy: "\u00A9",
+  reg: "\u00AE",
+  trade: "\u2122",
+  hellip: "\u2026",
+  mdash: "\u2014",
+  ndash: "\u2013",
+  lsquo: "\u2018",
+  rsquo: "\u2019",
+  ldquo: "\u201C",
+  rdquo: "\u201D",
+  laquo: "\u00AB",
+  raquo: "\u00BB",
+  middot: "\u00B7",
+  bull: "\u2022",
+};
+
+function decodeHtmlEntities(input: string): string {
+  return input.replace(
+    /&(#x[0-9a-f]+|#[0-9]+|[a-z][a-z0-9]{1,31});/gi,
+    (match, body: string) => {
+      if (body.startsWith("#x") || body.startsWith("#X")) {
+        const cp = parseInt(body.slice(2), 16);
+        if (Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff) {
+          try {
+            return String.fromCodePoint(cp);
+          } catch {
+            return match;
+          }
+        }
+        return match;
+      }
+      if (body.startsWith("#")) {
+        const cp = parseInt(body.slice(1), 10);
+        if (Number.isFinite(cp) && cp >= 0 && cp <= 0x10ffff) {
+          try {
+            return String.fromCodePoint(cp);
+          } catch {
+            return match;
+          }
+        }
+        return match;
+      }
+      const v = NAMED_ENTITIES[body.toLowerCase()];
+      return v ?? match;
+    },
+  );
 }
 
 /**
@@ -326,13 +461,7 @@ export function scrubTitleText(raw: string | null | undefined): string | null {
 function extractTitle(html: string): string | null {
   const m = html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
   if (!m || !m[1]) return null;
-  const decoded = m[1]
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-  return decoded;
+  return decodeHtmlEntities(m[1]);
 }
 
 /**
@@ -444,6 +573,7 @@ async function withTimeout<T>(
 async function readCapped(
   response: Response,
   maxBytes: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   // Prefer streaming so we don't buffer the entire body before slicing.
   if (!response.body) {
@@ -455,6 +585,12 @@ async function readCapped(
   let total = 0;
   try {
     while (total < maxBytes) {
+      // Honor outer timeout / abort. Without this check the reader would
+      // keep accumulating after the outer `withTimeout` returned, since
+      // `controller.abort()` signals `fetch` but not the already-granted
+      // reader. Bailing here prevents a slow server from holding the
+      // connection past the 5s budget.
+      if (signal?.aborted) break;
       const { done, value } = await reader.read();
       if (done) break;
       if (value) {
@@ -496,19 +632,23 @@ async function doFetchUrlStatus(
   // "follow"` would chase it silently because the allowlist only checks
   // the initial URL. We refuse redirects outright unless the `Location`
   // also normalizes into the same allowlist — i.e. same-site redirects
-  // that already pass the input-set membership test.
-  const checkLocation = (loc: string | null): boolean => {
-    if (!loc) return false;
-    const abs = (() => {
-      try {
-        return new URL(loc, url).toString();
-      } catch {
-        return null;
-      }
-    })();
-    if (!abs) return false;
+  // that already pass the input-set membership test. `resolveLocation`
+  // returns the *canonical* target so the caller can refetch the body
+  // from the actual content host rather than re-probing the redirector.
+  const resolveLocation = (loc: string | null): string | null => {
+    if (!loc) return null;
+    let abs: string;
+    try {
+      abs = new URL(loc, url).toString();
+    } catch {
+      return null;
+    }
     const canonical = normalizeUrl(abs);
-    return canonical !== null && allowlist.has(canonical);
+    if (!canonical || !allowlist.has(canonical)) return null;
+    return canonical;
+  };
+  const baseHeaders: Record<string, string> = {
+    "user-agent": FETCH_USER_AGENT,
   };
   const run = (async (): Promise<{
     status: number;
@@ -519,27 +659,45 @@ async function doFetchUrlStatus(
       method: "HEAD",
       signal: controller.signal,
       redirect: "manual",
+      headers: baseHeaders,
     });
+    let bodyUrl = url;
     if (head.status >= 300 && head.status < 400) {
-      if (!checkLocation(head.headers.get("location"))) {
+      const target = resolveLocation(head.headers.get("location"));
+      if (!target) {
         throw new Error("redirect not in input set");
       }
+      bodyUrl = target;
     }
     const contentType = head.headers.get("content-type") ?? "";
     let titleText: string | null = null;
     if (/text\/html|application\/xhtml\+xml/i.test(contentType)) {
-      const getResp = await fetchImpl(url, {
+      // GET the canonical redirect target, not the original URL. The prior
+      // behavior re-fetched `url` here and read a redirect-page body (empty
+      // or "Moved Permanently"), so titleText was always null for any site
+      // that went through a canonicalizing redirect.
+      const getResp = await fetchImpl(bodyUrl, {
         method: "GET",
         signal: controller.signal,
         redirect: "manual",
+        headers: baseHeaders,
       });
       if (getResp.status >= 300 && getResp.status < 400) {
-        if (!checkLocation(getResp.headers.get("location"))) {
+        // One more hop allowed if it stays in the allowlist; don't chase
+        // further to avoid redirect loops. The status we return is still
+        // from HEAD — this is deliberate so the agent sees the declared
+        // canonical-redirect outcome, not the terminal 200.
+        if (!resolveLocation(getResp.headers.get("location"))) {
           throw new Error("redirect not in input set");
         }
+      } else {
+        const bodyText = await readCapped(
+          getResp,
+          HTML_BODY_BYTE_CAP,
+          controller.signal,
+        );
+        titleText = scrubTitleText(extractTitle(bodyText));
       }
-      const bodyText = await readCapped(getResp, HTML_BODY_BYTE_CAP);
-      titleText = scrubTitleText(extractTitle(bodyText));
     }
     return { status: head.status, contentType, titleText };
   })();

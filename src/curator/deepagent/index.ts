@@ -43,6 +43,7 @@ import {
   DEFAULT_OUTPUT_COST_PER_MTOK,
 } from "../costModel.js";
 import type { BuildAgentOptions, ChunkUsage } from "./adapter.js";
+import { DEFAULT_TOOL_BUDGET } from "./adapter.js";
 import {
   assertPinnedVersions,
   VersionDriftError,
@@ -106,7 +107,7 @@ export interface DeepAgentConfig {
 
 export const DEEPAGENT_DEFAULTS: DeepAgentConfig = {
   maxIterations: 6,
-  toolBudget: 8,
+  toolBudget: DEFAULT_TOOL_BUDGET,
   maxChunkRetries: 3,
   maxConcurrentChunks: 1,
   enableLangsmith: false,

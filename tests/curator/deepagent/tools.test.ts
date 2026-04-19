@@ -135,6 +135,23 @@ describe("scrubTitleText (DA-Un-02, DA-Un-07)", () => {
     expect(out).not.toContain("[");
   });
 
+  it("slices on codepoints, not UTF-16 units (surrogate-safe)", () => {
+    // Review fix: `.slice(0, 128)` on UTF-16 units can split a surrogate
+    // pair. `JSON.stringify` then emits `\uDxxx` for the lone half. With
+    // emoji at position ~127, the old slice produced a malformed string.
+    const emoji = "\uD83D\uDE80"; // U+1F680 ROCKET — 2 UTF-16 units, 1 codepoint
+    const s = "a".repeat(127) + emoji + "b";
+    const out = scrubTitleText(s);
+    expect(out).not.toBeNull();
+    // Each element of the spread is a full codepoint — no lone surrogate.
+    for (const cp of out!) {
+      const code = cp.codePointAt(0)!;
+      expect(code).toBeGreaterThan(0);
+      // No lone surrogate in [0xD800, 0xDFFF].
+      expect(code < 0xd800 || code > 0xdfff).toBe(true);
+    }
+  });
+
   it("strips <script> blocks", () => {
     const out = scrubTitleText(
       "Welcome <script>alert('xss')</script> home",
@@ -204,6 +221,57 @@ describe("stripUrlFieldsFromMetadata (DA-Un-06)", () => {
     const out = stripUrlFieldsFromMetadata(input);
     expect(out.canonicalUrl).toBeUndefined();
     expect(out.foo).toBe(1);
+  });
+});
+
+describe("fetchUrlStatus — SSRF host filter (allowlist build)", () => {
+  it("rejects a chunk URL pointing at the cloud metadata IP before allowlisting", async () => {
+    // Review fix: collector URLs are untrusted. Even if a malicious RSS/Reddit
+    // feed lists `http://169.254.169.254/...`, it must NEVER enter the tool
+    // allowlist — otherwise the initial HEAD already targets the internal
+    // host and the manual-redirect guard can't save us.
+    const chunk = [
+      hnItem(0, { url: "http://169.254.169.254/latest/meta-data/" }),
+    ];
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("must not be called");
+    }) as unknown as typeof fetch;
+    const [fetchTool] = createCurationTools({ ...baseCtx(chunk), fetchImpl });
+    const res = await callTool(fetchTool!, {
+      url: "http://169.254.169.254/latest/meta-data/",
+    });
+    expect(res).toMatchObject({ ok: false, error: "url not in input set" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("rejects loopback + private IPv4 ranges", async () => {
+    const privates = [
+      "http://127.0.0.1/",
+      "http://10.0.0.1/",
+      "http://172.16.0.1/",
+      "http://192.168.1.1/",
+      "http://localhost/",
+    ];
+    for (const target of privates) {
+      const chunk = [hnItem(0, { url: target })];
+      const [fetchTool] = createCurationTools(baseCtx(chunk));
+      const res = await callTool(fetchTool!, { url: target });
+      expect(res).toMatchObject({ ok: false, error: "url not in input set" });
+    }
+  });
+
+  it("rejects IPv6 loopback + link-local", async () => {
+    const privates = [
+      "http://[::1]/",
+      "http://[fe80::1]/",
+      "http://[fc00::1]/",
+    ];
+    for (const target of privates) {
+      const chunk = [hnItem(0, { url: target })];
+      const [fetchTool] = createCurationTools(baseCtx(chunk));
+      const res = await callTool(fetchTool!, { url: target });
+      expect(res).toMatchObject({ ok: false, error: "url not in input set" });
+    }
   });
 });
 
@@ -287,6 +355,35 @@ describe("fetchUrlStatus — title scrub (DA-Un-02, DA-Un-07)", () => {
     expect((res.titleText as string).length).toBe(128);
   });
 
+  it("decodes typographic HTML entities in the extracted <title>", async () => {
+    // Review fix: previously `extractTitle` decoded only 5 entities; `&mdash;`
+    // / `&rsquo;` / `&#8217;` survived as raw bytes, producing garbled
+    // titleText for a large class of legitimate pages.
+    const chunk = [hnItem(0)];
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      const body =
+        method === "HEAD"
+          ? null
+          : "<html><title>Joe&rsquo;s Post &mdash; it&#8217;s great &hellip;</title></html>";
+      return new Response(body, {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    }) as unknown as typeof fetch;
+    const [fetchTool] = createCurationTools({ ...baseCtx(chunk), fetchImpl });
+    const res = (await callTool(fetchTool!, {
+      url: "https://example.com/article-0",
+    })) as Record<string, unknown>;
+    const t = String(res.titleText);
+    expect(t).not.toContain("&rsquo;");
+    expect(t).not.toContain("&mdash;");
+    expect(t).not.toContain("&#8217;");
+    expect(t).toContain("\u2019");
+    expect(t).toContain("\u2014");
+    expect(t).toContain("\u2026");
+  });
+
   it("strips bare URL from titleText", async () => {
     const chunk = [hnItem(0)];
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -353,6 +450,65 @@ describe("fetchUrlStatus — title scrub (DA-Un-02, DA-Un-07)", () => {
       url: "https://example.com/article-0",
     })) as Record<string, unknown>;
     expect(res.ok).toBe(true);
+  });
+
+  it("after 3xx HEAD, GET fetches the redirect target (not the original URL)", async () => {
+    // Review fix: the prior implementation re-fetched `url` on GET, so the
+    // body read was always the redirect-page ("Moved Permanently") — titleText
+    // ended up null for any site that canonicalized via 3xx. Now the GET
+    // must go to the Location so the real content's <title> is extractable.
+    const chunk = [hnItem(0), hnItem(1)];
+    const calls: { method: string; url: string }[] = [];
+    const fetchImpl = vi.fn(async (u: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      calls.push({ method, url: u });
+      if (method === "HEAD") {
+        return new Response(null, {
+          status: 301,
+          headers: {
+            "content-type": "text/html",
+            location: "https://example.com/article-1",
+          },
+        });
+      }
+      return new Response("<html><title>Canonical</title></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      });
+    }) as unknown as typeof fetch;
+    const [fetchTool] = createCurationTools({ ...baseCtx(chunk), fetchImpl });
+    const res = (await callTool(fetchTool!, {
+      url: "https://example.com/article-0",
+    })) as Record<string, unknown>;
+    expect(res.ok).toBe(true);
+    expect(res.titleText).toBe("Canonical");
+    // HEAD hit the original; GET hit the canonical redirect target.
+    expect(calls[0]).toMatchObject({
+      method: "HEAD",
+      url: "https://example.com/article-0",
+    });
+    expect(calls[1]).toMatchObject({
+      method: "GET",
+      url: "https://example.com/article-1",
+    });
+  });
+
+  it("sends a User-Agent header so CDNs don't 403 the bare request", async () => {
+    const chunk = [hnItem(0)];
+    const fetchImpl = vi.fn(async (_u: string, init?: RequestInit) => {
+      return new Response(null, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    const [fetchTool] = createCurationTools({ ...baseCtx(chunk), fetchImpl });
+    await callTool(fetchTool!, { url: "https://example.com/article-0" });
+    const firstCallInit = (fetchImpl as unknown as {
+      mock: { calls: [string, RequestInit?][] };
+    }).mock.calls[0]![1];
+    const headers = firstCallInit?.headers as Record<string, string>;
+    expect(headers).toBeDefined();
+    expect(headers["user-agent"]).toMatch(/ai-builder-pulse/);
   });
 
   it("non-HTML content-type returns titleText:null (no body fetch)", async () => {
