@@ -162,6 +162,13 @@ export async function publishToButtondown(
           headers: {
             "Content-Type": "application/json",
             Authorization: `Token ${opts.apiKey}`,
+            // Required by Buttondown on `status: "about_to_send"` until a
+            // newly-issued API key has sent at least one email programmatically.
+            // Idempotent / safe to include always; indicates the caller has
+            // acknowledged that sending is irreversible and will reach
+            // subscribers. Without this, a fresh key returns 400
+            // `sending_requires_confirmation` on the first POST.
+            "X-Buttondown-Live-Dangerously": "true",
           },
           body,
           signal: controller.signal,

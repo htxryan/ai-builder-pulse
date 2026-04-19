@@ -55,9 +55,14 @@ const CURATION_JSON_SCHEMA: Record<string, unknown> = {
           },
           category: { type: "string", enum: [...CATEGORIES] },
           relevanceScore: {
+            // Anthropic's structured-output schema validator rejects minimum/maximum
+            // on number types ("For 'number' type, properties maximum, minimum are not
+            // supported"). The [0.0, 1.0] range is enforced by the SYSTEM_PROMPT and
+            // the Zod post-parse in parseCurationContent; both are sufficient because
+            // the model almost never emits out-of-range floats when the prompt says
+            // "float in [0.0, 1.0]". If a value ever drifts out of range the Zod
+            // validator fails the chunk, which retries via DA-E-05.
             type: "number",
-            minimum: CURATION_SCHEMA_CONSTRAINTS.relevanceScoreMin,
-            maximum: CURATION_SCHEMA_CONSTRAINTS.relevanceScoreMax,
           },
           keep: { type: "boolean" },
           description: {
