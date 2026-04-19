@@ -54,6 +54,12 @@ describe("publishToButtondown", () => {
     const headers = call.init.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Token secret-key");
     expect(headers["Content-Type"]).toBe("application/json");
+    // Regression guard: a freshly-issued Buttondown API key returns 400
+    // `sending_requires_confirmation` on the first `status: about_to_send`
+    // POST unless this header is present. The header is always safe to
+    // include (it acknowledges that sending is irreversible). Observed live
+    // on 2026-04-19. See bead ai-builder-pulse-lb8.
+    expect(headers["X-Buttondown-Live-Dangerously"]).toBe("true");
     const payload = JSON.parse(call.init.body as string);
     expect(payload.subject).toBe(ISSUE.subject);
     expect(payload.body).toBe(ISSUE.body);
@@ -74,6 +80,46 @@ describe("publishToButtondown", () => {
     expect(out.id).toBe("em_ok");
     expect(out.attempts).toBe(3);
     expect(calls).toHaveLength(3);
+  });
+
+  it("always sends X-Buttondown-Live-Dangerously on every POST, including retries (bead lb8)", async () => {
+    // Regression guard: a future security-minded refactor might strip the
+    // "dangerous" header. The next Buttondown API-key rotation would then
+    // silently 400 on the first send. Assert the header is present on
+    // EVERY request the publisher issues, not just the first.
+    const { fetch, calls } = fakeFetch([
+      { status: 500 },
+      { status: 500 },
+      { status: 200, body: JSON.stringify({ id: "em_ok" }) },
+    ]);
+    await publishToButtondown(ISSUE, {
+      apiKey: "k",
+      fetchImpl: fetch,
+      retry: { sleep: noSleep, maxAttempts: 3 },
+    });
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      const headers = call.init.headers as Record<string, string>;
+      expect(headers["X-Buttondown-Live-Dangerously"]).toBe("true");
+    }
+  });
+
+  it("sends X-Buttondown-Live-Dangerously even when status is 'draft' (bead lb8)", async () => {
+    // Observed 2026-04-19: a prior `status: draft` POST with the header did
+    // NOT flip Buttondown's per-key confirmation flag; only an
+    // `about_to_send` POST with the header unlocks future sends. Safest
+    // behavior is to include the header on every POST regardless of status.
+    const { fetch, calls } = fakeFetch([
+      { status: 201, body: JSON.stringify({ id: "em_draft" }) },
+    ]);
+    await publishToButtondown(ISSUE, {
+      apiKey: "k",
+      fetchImpl: fetch,
+      retry: { sleep: noSleep },
+      status: "draft",
+    });
+    const headers = calls[0]!.init.headers as Record<string, string>;
+    expect(headers["X-Buttondown-Live-Dangerously"]).toBe("true");
   });
 
   it("fails after 3 attempts on persistent 5xx (E-04 retry exhaustion)", async () => {
