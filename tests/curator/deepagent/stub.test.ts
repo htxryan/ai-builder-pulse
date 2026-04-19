@@ -1,7 +1,8 @@
-// M1 surface test — runDeepAgentCurator is scaffolded but not wired to
-// LangGraph yet. It must throw NotYetImplementedError with an actionable
-// message so a misconfigured env fails loudly (not silently with empty
-// output).
+// M2 surface test — `runDeepAgentCurator` is now wired to the LangGraph
+// adapter. The NotYetImplementedError class is retained for backwards
+// compat (M1 callers matched against it) but the happy path no longer
+// throws. Behavioural coverage lives in `adapter.test.ts`; this file
+// checks only the public-surface exports.
 
 import { describe, it, expect } from "vitest";
 import {
@@ -9,46 +10,30 @@ import {
   NotYetImplementedError,
   runDeepAgentCurator,
 } from "../../../src/curator/deepagent/index.js";
-import type { RawItem } from "../../../src/types.js";
 
-function rawItem(id: string): RawItem {
-  return {
-    id,
-    source: "hn",
-    title: `t-${id}`,
-    url: `https://example.com/${id}`,
-    score: 1,
-    publishedAt: "2026-04-18T05:00:00.000Z",
-    metadata: { source: "hn", points: 10 },
-  };
-}
-
-describe("runDeepAgentCurator (M1 stub)", () => {
-  it("throws NotYetImplementedError with a pointer to the decomposition doc", async () => {
-    await expect(
-      runDeepAgentCurator([rawItem("a")], {
-        runId: "rid",
-        runDate: "2026-04-19",
-      }),
-    ).rejects.toBeInstanceOf(NotYetImplementedError);
-
-    try {
-      await runDeepAgentCurator([], { runId: "rid", runDate: "2026-04-19" });
-      expect.fail("expected throw");
-    } catch (err) {
-      expect((err as Error).message).toContain("deepagents-migration");
-      // Actionable pointer to the working fallback. Matches either spelling
-      // of the legacy opt-in (unset backend → default ClaudeCurator, or
-      // explicit CURATOR_BACKEND=legacy).
-      expect((err as Error).message).toMatch(/CURATOR_BACKEND/);
-    }
+describe("runDeepAgentCurator (public surface)", () => {
+  it("NotYetImplementedError remains exported for M1 compatibility", () => {
+    // Retained across M1→M2 so any external match on the symbol still
+    // type-checks. Sunset schedule tracks with the legacy path (M5).
+    const err = new NotYetImplementedError();
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe("NotYetImplementedError");
   });
 
-  it("DeepAgentCurator wraps the function and throws identically", async () => {
+  it("runDeepAgentCurator returns an empty array for empty input (no model call)", async () => {
+    // Empty input short-circuits before model construction — no API key
+    // or network required. This is the cheapest smoke that the wiring
+    // exists without spinning up a fake model.
+    const out = await runDeepAgentCurator([], {
+      runId: "rid",
+      runDate: "2026-04-19",
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("DeepAgentCurator satisfies the Curator interface shape", () => {
     const c = new DeepAgentCurator({ runId: "rid", runDate: "2026-04-19" });
-    await expect(c.curate([rawItem("a")])).rejects.toBeInstanceOf(
-      NotYetImplementedError,
-    );
+    expect(typeof c.curate).toBe("function");
     expect(c.lastMetrics()).toBeUndefined();
     expect(c.lastSkipped()).toEqual([]);
   });

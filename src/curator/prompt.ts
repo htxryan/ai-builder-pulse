@@ -6,6 +6,12 @@ import { CATEGORIES } from "../types.js";
 
 export const PROMPT_VERSION = "2026-04-18.1";
 
+// DA-U-07 — single source of truth for the curator model id. Consumed by
+// `anthropicClient.ts` (direct SDK path) and `deepagent/adapter.ts`
+// (LangChain binding). A consistency test asserts both paths resolve to
+// this constant so a drift in either one fails the build.
+export const MODEL_PIN = "claude-sonnet-4-6";
+
 const CATEGORY_DEFINITIONS = {
   "Tools & Launches":
     "A new developer tool, framework, library, CLI, SDK, or hosted service (including model-provider product launches other than the model itself).",

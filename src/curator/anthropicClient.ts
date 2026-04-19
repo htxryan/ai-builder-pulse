@@ -11,6 +11,7 @@ import {
   type CurationCallResult,
   type CurationClient,
 } from "./claudeCurator.js";
+import { MODEL_PIN } from "./prompt.js";
 
 export interface AnthropicClientOptions {
   readonly apiKey?: string;
@@ -59,7 +60,11 @@ export type MessagesParseFn = (
   args: MessagesParseArgs,
 ) => Promise<MessagesParseResult>;
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+// DA-U-07 — consume the shared MODEL_PIN constant. Do not inline a literal
+// here; the consistency test asserts this file sources the model id from
+// `prompt.ts` so both the direct SDK path and the LangChain binding stay
+// aligned.
+const DEFAULT_MODEL = MODEL_PIN;
 const DEFAULT_MAX_TOKENS = 16_000;
 
 function summarizeMetadata(item: RawItem): string {

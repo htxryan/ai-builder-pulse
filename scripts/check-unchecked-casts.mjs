@@ -22,9 +22,18 @@ const SRC_DIR = path.resolve(__dirname, "..", "src");
 // two match the line-level escape hatches TS offers.
 const PATTERNS = [/\bas unknown\b/, /@ts-ignore\b/, /@ts-nocheck\b/];
 
-// Ceiling: the single remaining `as unknown as MessagesParseFn` cast in
-// anthropicClient.ts. Any additional occurrence fails CI.
-const BASELINE = 1;
+// Ceiling:
+//   1. `as unknown as MessagesParseFn` in anthropicClient.ts — the SDK's
+//      generic `messages.parse` does not structurally simplify to the
+//      testable adapter shape.
+//   2. `as unknown as InteropZodType<...>` in deepagent/adapter.ts — zod
+//      v3 declares `description: string | undefined` (explicit-union)
+//      while LangChain's `InteropZodType` / `ZodV3Like` declares
+//      `description?: string` (implicit-optional). With
+//      `exactOptionalPropertyTypes: true` the two do not unify. Runtime
+//      is correct; the cast is documented inline at the call site.
+// Any additional occurrence fails CI.
+const BASELINE = 2;
 
 function walk(dir) {
   const out = [];
