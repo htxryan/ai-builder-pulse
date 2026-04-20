@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,7 +8,10 @@ import {
   sentinelPath,
   issueMdPath,
   itemsJsonPath,
+  latestJsonPath,
+  LatestPointerSchema,
 } from "../../src/archivist/index.js";
+import { OrchestratorStageError } from "../../src/errors.js";
 import type { ScoredItem, SourceSummary } from "../../src/types.js";
 
 function tempRepo(): string {
@@ -167,6 +170,128 @@ describe("archiveRun", () => {
     });
     const entries = readdirSync(archiveDir(root, runDate));
     expect(entries.some((e) => e.endsWith(".tmp"))).toBe(false);
+    // .published plus issue.md/items.json are the only files inside the
+    // dated folder. `latest.json` lives one level up in `issues/`.
     expect(new Set(entries)).toEqual(new Set(["issue.md", "items.json", ".published"]));
+  });
+
+  describe("latest.json pointer (AC-5, AC-7, AC-8)", () => {
+    it("writes issues/latest.json with the pointer shape after a successful run", () => {
+      archiveRun({
+        runDate,
+        repoRoot: root,
+        rendered: { subject: "S", body: "b" },
+        scored: [baseItem()],
+        summary: {} as SourceSummary,
+        publishId: "em_pointer",
+        publishedAt: "2026-04-18T06:10:00.000Z",
+      });
+
+      const pointerPath = latestJsonPath(root);
+      expect(pointerPath).toBe(path.join(root, "issues", "latest.json"));
+      expect(existsSync(pointerPath)).toBe(true);
+
+      const raw = readFileSync(pointerPath, "utf8");
+      const parsed = LatestPointerSchema.parse(JSON.parse(raw));
+      expect(parsed).toEqual({
+        date: runDate,
+        path: `issues/${runDate}/`,
+        publishId: "em_pointer",
+        publishedAt: "2026-04-18T06:10:00.000Z",
+      });
+    });
+
+    it("overwrites a previous pointer on a later publish (idempotent forward progress)", () => {
+      const first = {
+        runDate: "2026-04-17",
+        repoRoot: root,
+        rendered: { subject: "S", body: "b" },
+        scored: [baseItem()],
+        summary: {} as SourceSummary,
+        publishId: "em_1",
+        publishedAt: "2026-04-17T06:10:00.000Z",
+      };
+      const second = {
+        ...first,
+        runDate: "2026-04-18",
+        publishId: "em_2",
+        publishedAt: "2026-04-18T06:10:00.000Z",
+      };
+      archiveRun(first);
+      archiveRun(second);
+
+      const parsed = LatestPointerSchema.parse(
+        JSON.parse(readFileSync(latestJsonPath(root), "utf8")),
+      );
+      expect(parsed.date).toBe("2026-04-18");
+      expect(parsed.publishId).toBe("em_2");
+    });
+
+    it("wraps a pointer-write failure in OrchestratorStageError and leaves archive intact", async () => {
+      const fsAtomic = await import("../../src/fsAtomic.js");
+      // Capture realWrite BEFORE vi.spyOn installs the spy, otherwise the
+      // spy becomes the captured reference and we self-recurse.
+      const realWrite = fsAtomic.writeFileAtomic;
+      const spy = vi.spyOn(fsAtomic, "writeFileAtomic");
+      spy.mockImplementation((dest: string, contents: string) => {
+        if (dest.endsWith(path.join("issues", "latest.json"))) {
+          throw new Error("ENOSPC: simulated pointer-write failure");
+        }
+        return realWrite(dest, contents);
+      });
+
+      try {
+        expect(() =>
+          archiveRun({
+            runDate,
+            repoRoot: root,
+            rendered: { subject: "S", body: "b" },
+            scored: [baseItem()],
+            summary: {} as SourceSummary,
+            publishId: "em_fail",
+            publishedAt: "2026-04-18T06:10:00.000Z",
+          }),
+        ).toThrow(OrchestratorStageError);
+
+        expect(existsSync(sentinelPath(root, runDate))).toBe(true);
+        expect(existsSync(latestJsonPath(root))).toBe(false);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it("pointer-write error has stage=archive and retryable=false", async () => {
+      const fsAtomic = await import("../../src/fsAtomic.js");
+      const realWrite = fsAtomic.writeFileAtomic;
+      const spy = vi.spyOn(fsAtomic, "writeFileAtomic");
+      spy.mockImplementation((dest: string, contents: string) => {
+        if (dest.endsWith(path.join("issues", "latest.json"))) {
+          throw new Error("EROFS: read-only filesystem");
+        }
+        return realWrite(dest, contents);
+      });
+
+      try {
+        try {
+          archiveRun({
+            runDate,
+            repoRoot: root,
+            rendered: { subject: "S", body: "b" },
+            scored: [baseItem()],
+            summary: {} as SourceSummary,
+            publishId: "em_stage",
+            publishedAt: "2026-04-18T06:10:00.000Z",
+          });
+          throw new Error("should have thrown");
+        } catch (err) {
+          expect(err).toBeInstanceOf(OrchestratorStageError);
+          const stageErr = err as OrchestratorStageError;
+          expect(stageErr.stage).toBe("archive");
+          expect(stageErr.retryable).toBe(false);
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });

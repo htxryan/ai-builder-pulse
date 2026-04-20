@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Builder Pulse — daily intel for engineers building with AI</title>
+    <meta
+      name="description"
+      content="A daily, zero-filler briefing for engineers building AI-powered tools and workflows. Hacker News, GitHub Trending, Reddit, and the sharpest AI blogs — curated by Claude, delivered by 6:07 UTC."
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0320" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="AI Builder Pulse" />
+    <meta
+      property="og:description"
+      content="Daily briefing for AI builders. Curated, not generated."
+    />
+    <meta property="og:url" content="https://htxryan.github.io/ai-builder-pulse/" />
+    <meta property="og:image" content="./og-image.svg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AI Builder Pulse" />
+    <meta
+      name="twitter:description"
+      content="Daily briefing for AI builders. Curated, not generated."
+    />
+    <meta name="twitter:image" content="./og-image.svg" />
+
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <header class="hero">
+      <div class="hero__grid" aria-hidden="true">
+        <div class="hero__grid-floor"></div>
+        <div class="hero__sun"></div>
+        <div class="hero__stars"></div>
+      </div>
+
+      <nav class="topnav" aria-label="primary">
+        <a class="topnav__brand" href="#top" id="top">
+          <span class="pulse-dot" aria-hidden="true"></span>
+          <span>AI Builder Pulse</span>
+        </a>
+        <a class="topnav__archive" href="https://buttondown.com/ai-builder-pulse/archive/" rel="noopener">
+          archive&nbsp;↗
+        </a>
+      </nav>
+
+      <div class="hero__content">
+        <p class="hero__eyebrow">A daily transmission · since 2026</p>
+        <h1 class="wordmark">
+          <span class="wordmark__line">AI&nbsp;BUILDER</span>
+          <span class="wordmark__line wordmark__line--accent">PULSE</span>
+        </h1>
+        <p class="hero__tagline">
+          Daily intel for engineers building with&nbsp;AI. Hacker News, GitHub
+          Trending, Reddit, RSS — filtered by Claude, zero filler,
+          06:07&nbsp;UTC.
+        </p>
+
+        <form
+          class="signup signup--hero"
+          id="signup-hero"
+          action="https://buttondown.com/api/emails/embed-subscribe/ai-builder-pulse"
+          method="post"
+          target="popupwindow"
+        >
+          <label class="signup__label" for="signup-hero-email">
+            Get tomorrow's briefing
+          </label>
+          <div class="signup__row">
+            <input
+              id="signup-hero-email"
+              class="signup__input"
+              type="email"
+              name="email"
+              placeholder="you@builder.dev"
+              required
+              autocomplete="email"
+            />
+            <button class="btn btn--primary" type="submit">
+              <span class="btn__label">subscribe</span>
+              <span class="btn__arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+          <input type="hidden" name="embed" value="1" />
+          <p class="signup__success" data-signup-success hidden>
+            ✓ check your email to confirm the subscription
+          </p>
+          <p class="signup__fine-print">
+            free · unsubscribe with one click · double opt-in
+          </p>
+        </form>
+      </div>
+    </header>
+
+    <main>
+      <section class="latest" aria-labelledby="latest-heading">
+        <div class="latest__header">
+          <h2 id="latest-heading" class="section-title">
+            <span class="section-title__tag">// latest transmission</span>
+            <span class="section-title__live" data-live-dot aria-hidden="true"></span>
+          </h2>
+          <p class="latest__meta" data-latest-meta>
+            loading the most recent issue…
+          </p>
+        </div>
+
+        <article class="latest__preview" id="latest-preview" aria-live="polite">
+          <div class="latest__skeleton" data-latest-skeleton>
+            <div class="skeleton-line skeleton-line--lg"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line skeleton-line--sm"></div>
+          </div>
+
+          <div class="latest__content" data-latest-content hidden>
+            <div class="top-pick">
+              <p class="top-pick__label">today's top pick</p>
+              <h3 class="top-pick__title">
+                <a data-latest-toppick-link href="#" rel="noopener"></a>
+              </h3>
+              <p class="top-pick__source" data-latest-toppick-source></p>
+              <p class="top-pick__desc" data-latest-toppick-desc></p>
+            </div>
+            <div class="categories">
+              <h4 class="categories__heading">in this issue</h4>
+              <ul class="categories__list" data-latest-categories></ul>
+            </div>
+            <div class="latest__cta">
+              <a
+                class="btn btn--secondary"
+                data-latest-read-full
+                href="#"
+                rel="noopener"
+              >
+                read the full issue →
+              </a>
+            </div>
+          </div>
+
+          <div class="latest__fallback" data-latest-fallback hidden>
+            <p class="latest__fallback-text">
+              Latest issue preview is unavailable right now.
+            </p>
+            <a
+              class="btn btn--secondary"
+              href="https://buttondown.com/ai-builder-pulse/archive/"
+              rel="noopener"
+            >
+              browse the archive →
+            </a>
+          </div>
+        </article>
+      </section>
+
+      <section class="pitch" aria-labelledby="pitch-heading">
+        <h2 id="pitch-heading" class="section-title">
+          <span class="section-title__tag">// why this exists</span>
+        </h2>
+        <div class="pitch__grid">
+          <div class="pitch__card">
+            <p class="pitch__num">01</p>
+            <h3 class="pitch__title">Signal, not slurry</h3>
+            <p>
+              Every item is link-verified against its source. No hallucinated
+              URLs. No "trending everywhere" slop.
+            </p>
+          </div>
+          <div class="pitch__card">
+            <p class="pitch__num">02</p>
+            <h3 class="pitch__title">Fresh, not foraged</h3>
+            <p>
+              24-hour freshness window. If it's not from the last cycle, it
+              doesn't ship.
+            </p>
+          </div>
+          <div class="pitch__card">
+            <p class="pitch__num">03</p>
+            <h3 class="pitch__title">Builder-biased</h3>
+            <p>
+              Tools, models, techniques, infra. News-in-brief exists, but it
+              knows its place.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="signup-bottom" aria-labelledby="signup-bottom-heading">
+        <h2 id="signup-bottom-heading" class="section-title">
+          <span class="section-title__tag">// enter the grid</span>
+        </h2>
+        <form
+          class="signup signup--bottom"
+          id="signup-bottom"
+          action="https://buttondown.com/api/emails/embed-subscribe/ai-builder-pulse"
+          method="post"
+          target="popupwindow"
+        >
+          <label class="signup__label" for="signup-bottom-email">
+            one email per day, zero filler
+          </label>
+          <div class="signup__row">
+            <input
+              id="signup-bottom-email"
+              class="signup__input"
+              type="email"
+              name="email"
+              placeholder="you@builder.dev"
+              required
+              autocomplete="email"
+            />
+            <button class="btn btn--primary" type="submit">
+              <span class="btn__label">subscribe</span>
+              <span class="btn__arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+          <input type="hidden" name="embed" value="1" />
+          <p class="signup__success" data-signup-success hidden>
+            ✓ check your email to confirm the subscription
+          </p>
+        </form>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p class="footer__line">
+        built by an ai builder, for ai builders ·
+        <a href="https://github.com/htxryan/ai-builder-pulse" rel="noopener"
+          >source on github</a
+        >
+        ·
+        <a href="https://buttondown.com/ai-builder-pulse/archive/" rel="noopener"
+          >archive</a
+        >
+      </p>
+      <p class="footer__ascii" aria-hidden="true">
+        ░▒▓ END OF TRANSMISSION ▓▒░
+      </p>
+    </footer>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
