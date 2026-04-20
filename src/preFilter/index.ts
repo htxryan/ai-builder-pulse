@@ -1,0 +1,150 @@
+import { log } from "../log.js";
+import type { RawItem, Source, SourceSummary } from "../types.js";
+import { freshnessVerdict } from "./freshness.js";
+import { validateUrlShape } from "./urlShape.js";
+import { dedupByUrl } from "./dedup.js";
+
+export { normalizeUrl } from "./url.js";
+export { isFresh, freshnessCutoffMs, freshnessVerdict } from "./freshness.js";
+export type { FreshnessVerdict } from "./freshness.js";
+export { validateUrlShape } from "./urlShape.js";
+export type { UrlShapeRejectReason, UrlShapeResult } from "./urlShape.js";
+export { dedupByUrl } from "./dedup.js";
+export type { DedupResult } from "./dedup.js";
+
+export interface PreFilterStats {
+  readonly inputCount: number;
+  readonly freshnessDropped: number;
+  readonly invalidDateDropped: number;
+  readonly futureDropped: number;
+  readonly shapeDropped: number;
+  readonly duplicateDropped: number;
+  readonly normFailDropped: number;
+  readonly outputCount: number;
+}
+
+export interface PreFilterOptions {
+  readonly freshnessHours?: number;
+  readonly now?: Date;
+}
+
+export interface PreFilterResult {
+  readonly items: RawItem[];
+  readonly stats: PreFilterStats;
+  readonly summary: SourceSummary;
+}
+
+/**
+ * E3 entry point. Filter RawItems by freshness (24h window), URL shape, and
+ * normalized-URL dedup. Stateless, deterministic, idempotent: re-applying to
+ * the result yields the same items with all `*Dropped` counts at zero.
+ */
+export function applyPreFilter(
+  items: readonly RawItem[],
+  runDate: string,
+  collectorSummary: SourceSummary,
+  opts: PreFilterOptions = {},
+): PreFilterResult {
+  const hours = opts.freshnessHours;
+  const now = opts.now ?? new Date();
+
+  const fresh: RawItem[] = [];
+  let freshnessDropped = 0;
+  let invalidDateDropped = 0;
+  let futureDropped = 0;
+  for (const item of items) {
+    const verdict =
+      hours === undefined
+        ? freshnessVerdict(item.publishedAt, runDate, 24, now)
+        : freshnessVerdict(item.publishedAt, runDate, hours, now);
+    if (verdict === "fresh") {
+      fresh.push(item);
+    } else if (verdict === "invalid_date") {
+      invalidDateDropped += 1;
+      log.warn("pre-filter dropped item with unparseable publishedAt", {
+        id: item.id,
+        source: item.source,
+      });
+    } else if (verdict === "future") {
+      futureDropped += 1;
+      log.warn("pre-filter dropped future-dated item", {
+        id: item.id,
+        source: item.source,
+        publishedAt: item.publishedAt,
+      });
+    } else {
+      freshnessDropped += 1;
+    }
+  }
+
+  const shapeOk: RawItem[] = [];
+  let shapeDropped = 0;
+  for (const item of fresh) {
+    const verdict = validateUrlShape(item.url);
+    if (verdict.ok) {
+      shapeOk.push(item);
+    } else {
+      shapeDropped += 1;
+      log.warn("pre-filter dropped item by URL shape", {
+        id: item.id,
+        source: item.source,
+        reason: verdict.reason,
+      });
+    }
+  }
+
+  const { kept, removed, normFailed } = dedupByUrl(shapeOk);
+  const duplicateDropped = removed.length;
+  const normFailDropped = normFailed.length;
+
+  const stats: PreFilterStats = {
+    inputCount: items.length,
+    freshnessDropped,
+    invalidDateDropped,
+    futureDropped,
+    shapeDropped,
+    duplicateDropped,
+    normFailDropped,
+    outputCount: kept.length,
+  };
+
+  const summary = annotateSummary(collectorSummary, kept);
+  return { items: kept, stats, summary };
+}
+
+/** Set of distinct sources represented in `items`. Used by the S-05 floor check. */
+export function uniqueSources(items: readonly RawItem[]): Set<Source> {
+  const out = new Set<Source>();
+  for (const it of items) out.add(it.source);
+  return out;
+}
+
+function annotateSummary(
+  collectorSummary: SourceSummary,
+  kept: readonly RawItem[],
+): SourceSummary {
+  const keptCounts: Partial<Record<Source, number>> = {};
+  for (const it of kept) {
+    keptCounts[it.source] = (keptCounts[it.source] ?? 0) + 1;
+  }
+  const out: SourceSummary = {};
+  for (const [src, val] of Object.entries(collectorSummary)) {
+    if (!val) continue;
+    out[src as Source] = {
+      ...val,
+      keptCount: keptCounts[src as Source] ?? 0,
+    };
+  }
+  // Surface sources that appear in the kept set but somehow not in the
+  // collector summary (defensive — should not happen in practice).
+  for (const src of Object.keys(keptCounts) as Source[]) {
+    if (!out[src]) {
+      out[src] = {
+        count: keptCounts[src] ?? 0,
+        status: "ok",
+        keptCount: keptCounts[src] ?? 0,
+      };
+    }
+  }
+  return out;
+}

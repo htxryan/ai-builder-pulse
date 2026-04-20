@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="AI Builder Pulse">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#07031a"/>
+      <stop offset="50%" stop-color="#1b0a4a"/>
+      <stop offset="100%" stop-color="#07031a"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="50%" cy="65%" r="35%">
+      <stop offset="0%" stop-color="#ffefc7"/>
+      <stop offset="25%" stop-color="#ffb347"/>
+      <stop offset="55%" stop-color="#ff3e93"/>
+      <stop offset="85%" stop-color="#7b15c8"/>
+      <stop offset="100%" stop-color="#07031a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="40%" stop-color="#ece3ff"/>
+      <stop offset="70%" stop-color="#b695ff"/>
+      <stop offset="100%" stop-color="#6a3cff"/>
+    </linearGradient>
+    <linearGradient id="chromeAccent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff0fb"/>
+      <stop offset="40%" stop-color="#ff8fe1"/>
+      <stop offset="80%" stop-color="#ff2bd6"/>
+      <stop offset="100%" stop-color="#a600a3"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- sun -->
+  <circle cx="600" cy="400" r="220" fill="url(#sun)"/>
+  <!-- sun horizontal bands cutting through -->
+  <g opacity="0.95" fill="#07031a">
+    <rect x="380" y="395" width="440" height="10"/>
+    <rect x="380" y="415" width="440" height="10"/>
+    <rect x="380" y="435" width="440" height="10"/>
+    <rect x="380" y="455" width="440" height="10"/>
+  </g>
+
+  <!-- grid floor -->
+  <g stroke="#ff2bd6" stroke-width="1.5" opacity="0.55">
+    <line x1="0" y1="500" x2="1200" y2="500"/>
+    <line x1="-400" y1="630" x2="600" y2="500"/>
+    <line x1="-200" y1="630" x2="600" y2="500"/>
+    <line x1="0" y1="630" x2="600" y2="500"/>
+    <line x1="200" y1="630" x2="600" y2="500"/>
+    <line x1="400" y1="630" x2="600" y2="500"/>
+    <line x1="600" y1="630" x2="600" y2="500"/>
+    <line x1="800" y1="630" x2="600" y2="500"/>
+    <line x1="1000" y1="630" x2="600" y2="500"/>
+    <line x1="1200" y1="630" x2="600" y2="500"/>
+    <line x1="1400" y1="630" x2="600" y2="500"/>
+    <line x1="1600" y1="630" x2="600" y2="500"/>
+  </g>
+  <g stroke="#00f0ff" stroke-width="1" opacity="0.45">
+    <line x1="0" y1="530" x2="1200" y2="530"/>
+    <line x1="0" y1="560" x2="1200" y2="560"/>
+    <line x1="0" y1="590" x2="1200" y2="590"/>
+    <line x1="0" y1="620" x2="1200" y2="620"/>
+  </g>
+
+  <!-- wordmark -->
+  <g font-family="Inter, Helvetica, Arial, sans-serif" font-weight="900" text-anchor="middle">
+    <text x="600" y="200" font-size="110" fill="url(#chrome)" letter-spacing="-3">AI BUILDER</text>
+    <text x="600" y="310" font-size="140" fill="url(#chromeAccent)" letter-spacing="-4">PULSE</text>
+  </g>
+
+  <!-- tagline strip -->
+  <rect x="340" y="350" width="520" height="40" rx="3" fill="#07031a" stroke="#00f0ff" opacity="0.9"/>
+  <text x="600" y="378" font-family="JetBrains Mono, Menlo, monospace" font-size="20" fill="#00f0ff" text-anchor="middle">
+    daily intel for engineers building with AI
+  </text>
+</svg>

@@ -1,0 +1,20 @@
+# compound-agent managed
+.compound-agent/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+
+# Node
+node_modules/
+dist/
+coverage/
+.env
+.env.local
+*.log
+
+# Editor
+.vscode/
+.idea/
+.DS_Store

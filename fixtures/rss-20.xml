@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Example Blog</title>
+    <link>https://example.com/</link>
+    <description>Example</description>
+    <item>
+      <title>New agent framework released</title>
+      <link>https://example.com/agent-framework</link>
+      <guid>https://example.com/agent-framework</guid>
+      <pubDate>Fri, 18 Apr 2026 05:00:00 GMT</pubDate>
+      <dc:creator>Example Author</dc:creator>
+    </item>
+  </channel>
+</rss>

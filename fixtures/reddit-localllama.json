@@ -1,0 +1,40 @@
+{
+  "kind": "Listing",
+  "data": {
+    "after": null,
+    "children": [
+      {
+        "kind": "t3",
+        "data": {
+          "id": "post1",
+          "title": "Running 70B model on 2x RTX 4090",
+          "url": "https://example.com/70b-post",
+          "permalink": "/r/LocalLLaMA/comments/post1/running_70b/",
+          "score": 320,
+          "num_comments": 45,
+          "subreddit": "LocalLLaMA",
+          "created_utc": 1744930800,
+          "author": "someone",
+          "is_self": false,
+          "stickied": false
+        }
+      },
+      {
+        "kind": "t3",
+        "data": {
+          "id": "post2",
+          "title": "Pinned megathread",
+          "url": "https://example.com/mega",
+          "permalink": "/r/LocalLLaMA/comments/post2/mega/",
+          "score": 50,
+          "num_comments": 100,
+          "subreddit": "LocalLLaMA",
+          "created_utc": 1744900000,
+          "author": "mod",
+          "is_self": false,
+          "stickied": true
+        }
+      }
+    ]
+  }
+}

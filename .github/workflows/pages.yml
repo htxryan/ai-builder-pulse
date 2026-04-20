@@ -1,0 +1,87 @@
+# Deploy the brochure site to GitHub Pages.
+#
+# The pipeline writes issues/latest.json on every successful daily publish;
+# that commit to main triggers this workflow, which assembles `site/` plus
+# the `issues/` archive into a single artifact and deploys to Pages. The
+# brochure's JS fetches `./latest.json` and `./issues/<date>/items.json`
+# same-origin, so there is no CORS surface.
+#
+# This workflow is deploy-only: it does NOT execute the newsletter pipeline
+# (no pnpm install of runtime deps, no `pnpm start`). That keeps secrets
+# scoped to the daily.yml workflow and keeps this one fast.
+
+name: Deploy brochure site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "issues/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A daily pipeline commit can race a manual `workflow_dispatch` run. We
+# serialize on the `pages` group so a newer deploy always wins, but we do
+# NOT cancel an in-progress deploy mid-upload (can leave Pages in a bad
+# state). The queued run picks up latest main when it starts.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assemble artifact
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          # Site files land at the artifact root so relative URLs like
+          # ./latest.json and ./issues/<date>/items.json resolve.
+          cp -R site/. _site/
+          # The brochure fetches ./latest.json (the pointer). Copy it to
+          # the artifact root AND keep the archive tree available under
+          # ./issues/ so the linked issues resolve.
+          if [ -f issues/latest.json ]; then
+            cp issues/latest.json _site/latest.json
+          else
+            echo "::warning::issues/latest.json is missing; brochure will fall back to archive link"
+          fi
+          if [ -d issues ]; then
+            mkdir -p _site/issues
+            # Exclude the top-level pointer (already at root) to avoid
+            # shipping it twice; keep everything else.
+            rsync -a --exclude 'latest.json' issues/ _site/issues/
+          fi
+          echo "Artifact layout:"
+          find _site -maxdepth 2 -type f | head -30
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

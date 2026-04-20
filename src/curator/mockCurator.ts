@@ -1,0 +1,98 @@
+import type { Category, RawItem, ScoredItem, Source } from "../types.js";
+import { CATEGORIES, ScoredItemSchema } from "../types.js";
+import type { SkippedItemRecord } from "./deadletter.js";
+
+/**
+ * Optional cost/token metrics emitted by curators that talk to a paid API.
+ * MockCurator leaves this undefined; ClaudeCurator populates after each
+ * successful `curate` call so the orchestrator can surface the run's cost in
+ * the operator job summary.
+ *
+ * `tokensPerSource` / `costPerSource` are item-count-weighted apportionments
+ * of the per-chunk usage — they let an operator see which source is driving
+ * curation cost (e.g. "RSS is 70% of today's spend").
+ *
+ * `model` / `promptVersion` / `chunkCount` / `maxUsd` are curator-instance
+ * identifiers (not aggregated from per-call usage). They populate for
+ * curators that own a pinned model + prompt (ClaudeCurator, DeepAgents).
+ * MockCurator leaves them undefined — a scoring mock has no real model.
+ * Injected curators built by callers must populate these themselves for
+ * the run summary to carry them; the orchestrator will not fill them in.
+ */
+export interface CuratorMetrics {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly estimatedUsd: number;
+  // Cache telemetry — populated by clients that report Anthropic cache
+  // accounting. Undefined when the client did not return usage data.
+  readonly cacheReadInputTokens?: number;
+  readonly cacheCreationInputTokens?: number;
+  // Per-source apportionment. Keys are the Source enum values; absent sources
+  // contributed zero items to curation. Token counts are `input + output`;
+  // cost is `inputTokens/1M × inputCostPerMTok + outputTokens/1M × outputCostPerMTok`.
+  // Apportioned by item count per chunk (not byte size), so a source with
+  // long descriptions may be slightly under-attributed — good enough for
+  // "who is driving cost" triage.
+  readonly tokensPerSource?: Partial<Record<Source, number>>;
+  readonly costPerSource?: Partial<Record<Source, number>>;
+  // Curator-instance identifiers (see file comment above). All four are
+  // populated by ClaudeCurator and the DeepAgents curator; MockCurator and
+  // any curator without a real model leaves them undefined.
+  readonly model?: string;
+  readonly promptVersion?: string;
+  readonly chunkCount?: number;
+  readonly maxUsd?: number;
+}
+
+export interface Curator {
+  curate(items: RawItem[]): Promise<ScoredItem[]>;
+  // Optional — returns metrics from the most recent `curate` call. Curators
+  // that do not track cost (e.g. `MockCurator`) simply omit this hook.
+  lastMetrics?(): CuratorMetrics | undefined;
+  // Optional — returns RawItems the curator could not score (zod failures,
+  // retry exhaustion with structured cause). The orchestrator writes these
+  // to `issues/{runDate}/.skipped-items.json` and surfaces the count in the
+  // GHA job summary. Empty array when every item mapped cleanly.
+  lastSkipped?(): readonly SkippedItemRecord[];
+}
+
+function pickCategory(item: RawItem): Category {
+  const hash = Array.from(item.id).reduce(
+    (acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0,
+    0,
+  );
+  return CATEGORIES[hash % CATEGORIES.length]!;
+}
+
+// Schema cap on description is 600. Keep this constant in sync.
+const DESC_MAX = 600;
+
+function truncateDescription(title: string): string {
+  const base = `Mock curation for: ${title}`;
+  if (base.length >= 100) return base.slice(0, Math.min(base.length, DESC_MAX));
+  return base.padEnd(100, ".");
+}
+
+export class MockCurator implements Curator {
+  async curate(items: RawItem[]): Promise<ScoredItem[]> {
+    const out: ScoredItem[] = items.map((raw, idx) => {
+      const scored = {
+        ...raw,
+        category: pickCategory(raw),
+        relevanceScore: Math.min(
+          1,
+          Math.max(0, 0.5 + ((idx % 10) - 5) * 0.05),
+        ),
+        keep: idx % 3 !== 0,
+        description: truncateDescription(raw.title),
+      };
+      return ScoredItemSchema.parse(scored);
+    });
+    if (out.length !== items.length) {
+      throw new Error(
+        `MockCurator count invariant violated: in=${items.length} out=${out.length}`,
+      );
+    }
+    return out;
+  }
+}
