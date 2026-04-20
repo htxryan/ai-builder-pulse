@@ -41,14 +41,33 @@ function writeCache(pointer, items) {
 }
 
 // Narrow zod-style validation without shipping zod. Returns null on invalid.
+// The `path` field is interpolated into a fetch URL (`./${path}items.json`),
+// so we defend against path traversal here — a crafted `latest.json` could
+// otherwise escape the archive subtree. Same-origin makes this low-risk in
+// practice, but the guard keeps the contract tight.
 function parsePointer(obj) {
   if (!obj || typeof obj !== "object") return null;
   const { date, path, publishId, publishedAt } = obj;
   if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   if (typeof path !== "string" || !path.startsWith("issues/") || !path.endsWith("/")) return null;
+  if (path.includes("..") || path.includes("//")) return null;
   if (typeof publishId !== "string" || publishId.length === 0) return null;
   if (typeof publishedAt !== "string") return null;
   return { date, path, publishId, publishedAt };
+}
+
+// Accept only plain http(s) URLs for anything we interpolate into an `href`.
+// `javascript:` / `data:` URLs in a curated item (or a poisoned items.json)
+// would otherwise become executable when a visitor clicks through.
+function safeExternalHref(url) {
+  if (typeof url !== "string" || url.length === 0) return "#";
+  try {
+    const u = new URL(url, "https://example.invalid/");
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "#";
+    return url;
+  } catch {
+    return "#";
+  }
 }
 
 function parseItemsJson(obj) {
@@ -145,7 +164,9 @@ function renderPreview(pointer, payload) {
     const descEl = document.querySelector("[data-latest-toppick-desc]");
     if (linkEl) {
       linkEl.textContent = top.title || "(untitled)";
-      linkEl.href = top.url || "#";
+      linkEl.href = safeExternalHref(top.url);
+      linkEl.setAttribute("target", "_blank");
+      linkEl.setAttribute("rel", "noopener noreferrer");
     }
     if (sourceEl) sourceEl.textContent = sourceLabel(top);
     if (descEl) descEl.textContent = top.description || "";
@@ -261,6 +282,7 @@ export const __test = {
   pickTopPick,
   categoryCounts,
   sourceLabel,
+  safeExternalHref,
   ARCHIVE_FALLBACK_URL,
   CACHE_KEY,
   CACHE_TTL_MS,

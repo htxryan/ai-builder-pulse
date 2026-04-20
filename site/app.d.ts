@@ -31,6 +31,7 @@ export const __test: {
   pickTopPick: (items: unknown[]) => Record<string, unknown> | null;
   categoryCounts: (items: unknown[]) => Array<[string, number]>;
   sourceLabel: (item: { source?: string; metadata?: { subreddit?: string } }) => string;
+  safeExternalHref: (url: unknown) => string;
   ARCHIVE_FALLBACK_URL: string;
   CACHE_KEY: string;
   CACHE_TTL_MS: number;

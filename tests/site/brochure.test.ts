@@ -132,6 +132,27 @@ describe("brochure site — pure helpers (AC-1..AC-4)", () => {
     expect(parsePointer({ date: "2026-04-19", path: "not-issues/", publishId: "a", publishedAt: "t" })).toBeNull();
   });
 
+  it("parsePointer rejects path-traversal payloads (security regression)", async () => {
+    const mod = await import("../../site/app.js");
+    const { parsePointer } = mod.__test as { parsePointer: (o: unknown) => unknown };
+    const base = { date: "2026-04-19", publishId: "em_a", publishedAt: "2026-04-19T00:00:00.000Z" };
+    expect(parsePointer({ ...base, path: "issues/../etc/passwd/" })).toBeNull();
+    expect(parsePointer({ ...base, path: "issues/2026-04-19/../../root/" })).toBeNull();
+    expect(parsePointer({ ...base, path: "issues//foo/" })).toBeNull();
+  });
+
+  it("safeExternalHref rejects non-http(s) URLs (security regression)", async () => {
+    const mod = await import("../../site/app.js");
+    const { safeExternalHref } = mod.__test as { safeExternalHref: (u: unknown) => string };
+    expect(safeExternalHref("https://example.com/x")).toBe("https://example.com/x");
+    expect(safeExternalHref("http://example.com/")).toBe("http://example.com/");
+    expect(safeExternalHref("javascript:alert(1)")).toBe("#");
+    expect(safeExternalHref("data:text/html,<script>alert(1)</script>")).toBe("#");
+    expect(safeExternalHref("")).toBe("#");
+    expect(safeExternalHref(null)).toBe("#");
+    expect(safeExternalHref("not a url")).toBe("not a url"); // URL constructor resolves relative against base
+  });
+
   it("pickTopPick selects the highest relevanceScore among kept items, breaking ties by score", async () => {
     const mod = await import("../../site/app.js");
     const { pickTopPick } = mod.__test as { pickTopPick: (a: unknown[]) => unknown };
