@@ -14,6 +14,11 @@ export const NEWSLETTER_SLUG = "ai-builder-pulse";
 export const NEWSLETTER_HOME_URL = `https://buttondown.com/${NEWSLETTER_SLUG}`;
 export const NEWSLETTER_ARCHIVE_URL = `https://buttondown.com/${NEWSLETTER_SLUG}/archive/`;
 
+// Canonical custom-domain URLs for the public site. Outgoing email bodies
+// link here (rather than to Buttondown) so readers land on the branded site.
+export const CANONICAL_HOME_URL = "https://pulse.ryanhenderson.dev";
+export const CANONICAL_ARCHIVE_URL = "https://pulse.ryanhenderson.dev/archive/";
+
 // Buttondown substitutes `{{unsubscribe_url}}` at send time with a
 // per-subscriber tokenized URL of the form:
 //   https://buttondown.com/emails/<token>/unsubscribe
@@ -29,4 +34,6 @@ export const RENDERER_TEMPLATE_URL_PATTERNS: readonly RegExp[] = [
   ),
   // Realized per-subscriber unsubscribe URL.
   /^https:\/\/buttondown\.com\/emails\/[^/\s]+\/unsubscribe(\?.*)?$/,
+  // Canonical custom-domain site (home, archive, and any sub-path).
+  /^https:\/\/pulse\.ryanhenderson\.dev(\/.*)?$/,
 ];

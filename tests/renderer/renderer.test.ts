@@ -3,6 +3,8 @@ import {
   renderIssue,
   NEWSLETTER_ARCHIVE_URL,
   NEWSLETTER_HOME_URL,
+  CANONICAL_ARCHIVE_URL,
+  CANONICAL_HOME_URL,
   RENDERER_TEMPLATE_URL_PATTERNS,
 } from "../../src/renderer/index.js";
 import { verifyLinkIntegrity } from "../../src/curator/linkIntegrity.js";
@@ -61,8 +63,8 @@ describe("renderIssue (C5)", () => {
     expect(r.body).toContain("Today: 1 story across 1 category");
     expect(r.body).toContain("## Tools & Launches");
     expect(r.body).toContain("### [Title a](https://example.com/a)");
-    expect(r.body).toContain(NEWSLETTER_HOME_URL);
-    expect(r.body).toContain(NEWSLETTER_ARCHIVE_URL);
+    expect(r.body).toContain(CANONICAL_HOME_URL);
+    expect(r.body).toContain(CANONICAL_ARCHIVE_URL);
     expect(r.body).toContain("{{unsubscribe_url}}");
   });
 
@@ -116,7 +118,7 @@ describe("renderIssue (C5)", () => {
     // S-02 prevents this reaching production, but renderer must be total.
     const r = renderIssue("2026-04-18", []);
     expect(r.body).toContain("no items met the relevance bar");
-    expect(r.body).toContain(NEWSLETTER_HOME_URL);
+    expect(r.body).toContain(CANONICAL_HOME_URL);
   });
 
   it("golden-file: deterministic snapshot for fixture input", () => {
@@ -176,11 +178,43 @@ describe("renderIssue (C5)", () => {
       RENDERER_TEMPLATE_URL_PATTERNS.some((p) => p.test(url));
     expect(matchesAny(NEWSLETTER_HOME_URL)).toBe(true);
     expect(matchesAny(NEWSLETTER_ARCHIVE_URL)).toBe(true);
+    expect(matchesAny(CANONICAL_HOME_URL)).toBe(true);
+    expect(matchesAny(CANONICAL_ARCHIVE_URL)).toBe(true);
+    expect(matchesAny("https://pulse.ryanhenderson.dev/issues/2026-04-19/")).toBe(
+      true,
+    );
     expect(
       matchesAny(
         "https://buttondown.com/emails/abc-123-token/unsubscribe",
       ),
     ).toBe(true);
     expect(matchesAny("https://evil.example.com/hijack")).toBe(false);
+    expect(matchesAny("https://pulse.ryanhenderson.dev.evil.com/x")).toBe(false);
+  });
+
+  it("Un-01: canonical pulse.ryanhenderson.dev URL in rendered body passes link-integrity (AC-12)", () => {
+    // The renderer emits the canonical home + archive URLs in its footer.
+    // Verify the end-to-end rendered body passes verifyLinkIntegrity with the
+    // renderer's own template-URL allowlist — i.e., no Un-01 violations are
+    // raised against the canonical domain.
+    const raws = [makeRaw("a", "https://example.com/a")];
+    const scoreds = [makeScored("a")];
+    const rendered = renderIssue("2026-04-18", scoreds);
+    expect(rendered.body).toContain("https://pulse.ryanhenderson.dev");
+    expect(rendered.body).toContain("https://pulse.ryanhenderson.dev/archive/");
+
+    // Route the rendered markdown into a scored-item description so
+    // verifyLinkIntegrity's URL extractor sees the canonical URLs.
+    const withTemplateUrls: ScoredItem = {
+      ...scoreds[0]!,
+      description: rendered.body,
+    };
+    const integrity = verifyLinkIntegrity(
+      [withTemplateUrls],
+      raws,
+      RENDERER_TEMPLATE_URL_PATTERNS,
+    );
+    expect(integrity.ok).toBe(true);
+    expect(integrity.violations).toEqual([]);
   });
 });
