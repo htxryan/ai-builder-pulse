@@ -1,0 +1,20 @@
+# Gitleaks config for ai-builder-pulse.
+#
+# Extends the default ruleset; only suppresses known false-positive paths
+# where we archive third-party content we don't control:
+#   - issues/**       daily archives of collector-sourced raw items and
+#                     their URLs (which often contain ?token= query
+#                     parameters trackers/feeds embed). Those strings are
+#                     not secrets we own or leak.
+#   - .gemini/**      tool-generated manifest for the Gemini CLI; entropy
+#                     matches on internal file hashes, not secrets.
+title = "ai-builder-pulse gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+    '''issues/.*''',
+    '''\.gemini/.*''',
+]

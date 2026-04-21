@@ -83,6 +83,11 @@ jobs:
       - name: Run orchestrator
         id: orchestrator
         env:
+          # MUST be "claude" — selectCurator defaults to the MockCurator
+          # when CURATOR is unset (see src/curator/index.ts:71). Shipping
+          # mock output to subscribers is exactly the failure mode this
+          # env guards against.
+          CURATOR: claude
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
           CURATOR_MODEL_OVERRIDE: ${{ vars.CURATOR_MODEL_OVERRIDE }}
