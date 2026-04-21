@@ -275,8 +275,13 @@ describe(".github/workflows/pages.yml (AC-18..AC-21)", () => {
   it("assembles site/ and issues/ into the artifact root (AC-20)", () => {
     // Artifact path matches the assembly directory.
     expect(yml).toMatch(/path:\s*_site/);
-    expect(yml).toMatch(/cp\s+-R\s+site\/\.\s+_site\//);
-    expect(yml).toMatch(/issues\/latest\.json/);
+    // Assembly is delegated to `pnpm build:site` (scripts/build-site.ts).
+    expect(yml).toMatch(/pnpm\s+build:site/);
+    // pnpm + Node setup are required for that script to run.
+    expect(yml).toMatch(/pnpm\/action-setup@v4/);
+    expect(yml).toMatch(/actions\/setup-node@v4/);
+    expect(yml).toMatch(/cache:\s*pnpm/);
+    expect(yml).toMatch(/pnpm\s+install\s+--frozen-lockfile/);
   });
 
   it("does NOT execute the newsletter pipeline (AC-21)", () => {

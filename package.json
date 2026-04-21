@@ -10,6 +10,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "build": "tsc -p tsconfig.build.json",
+    "build:site": "tsx scripts/build-site.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
