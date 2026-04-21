@@ -34,6 +34,15 @@
   box-sizing: border-box;
 }
 
+/* The `hidden` attribute must always win — class selectors (e.g.
+ * .latest__skeleton { display: flex }) have higher specificity than the
+ * user-agent `[hidden] { display: none }` rule, which leaves the element
+ * visible after we toggle `.hidden = true` from JS. Without this rule,
+ * the skeleton stayed on screen even after the preview rendered. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
