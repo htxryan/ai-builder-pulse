@@ -497,7 +497,7 @@ describe("IV scenario 7 — Un-01 + renderer allowlist: template URLs pass, fabr
     expect(violation).toBeDefined();
   });
 
-  it("orchestrator rejects runs with fabricated URLs via status=failed/reason=Un-01", async () => {
+  it("orchestrator rejects runs with fabricated primary-url via status=failed/reason=Un-01", async () => {
     const root = mkdtempSync(path.join(tmpdir(), "abp-iv7-"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -513,15 +513,21 @@ describe("IV scenario 7 — Un-01 + renderer allowlist: template URLs pass, fabr
           MIN_SOURCES: "2",
         },
         fetchAll: fixtureFetch,
-        // Curator injects fabricated URLs into descriptions
+        // Curator fabricates the primary .url field. Description-embedded
+        // URLs are now silently stripped by sanitizeDescriptions before the
+        // integrity gate (models frequently recall project homepages from
+        // training data); the gate's remaining job is catching fabricated
+        // primary URLs — which still must trace back to the raw set.
         curator: {
           async curate(items) {
             return items.map((it) => ({
               ...it,
+              url: `https://evil.example.com/${it.id}`,
               category: "Tools & Launches" as const,
               relevanceScore: 0.5,
               keep: true,
-              description: `A helpful note — see https://evil.example.com/${it.id} for more information on this.`,
+              description:
+                "A helpful note about this tool — plain prose only, no embedded links.",
             }));
           },
         },
@@ -530,6 +536,41 @@ describe("IV scenario 7 — Un-01 + renderer allowlist: template URLs pass, fabr
       expect(r.reason).toBe("Un-01");
     } finally {
       errSpy.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("orchestrator strips URLs embedded in descriptions instead of failing Un-01", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "abp-iv7s-"));
+    try {
+      const r = await runOrchestrator({
+        now: fixedNow,
+        repoRoot: root,
+        env: {
+          DRY_RUN: "1",
+          MIN_ITEMS_TO_PUBLISH: "1",
+          MIN_SOURCES: "2",
+        },
+        fetchAll: fixtureFetch,
+        curator: {
+          async curate(items) {
+            return items.map((it) => ({
+              ...it,
+              category: "Tools & Launches" as const,
+              relevanceScore: 0.5,
+              keep: true,
+              description: `A helpful note — see https://evil.example.com/${it.id} for more information on this tool and how it works.`,
+            }));
+          },
+        },
+      });
+      // Sanitizer removes the embedded URL; gate sees a clean description
+      // and the run proceeds to dry_run instead of failing Un-01.
+      expect(r.status).toBe("dry_run");
+      expect(
+        r.scored?.every((s) => !/https?:\/\//i.test(s.description)),
+      ).toBe(true);
+    } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });

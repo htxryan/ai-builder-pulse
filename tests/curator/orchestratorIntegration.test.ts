@@ -95,15 +95,18 @@ describe("Orchestrator + ClaudeCurator (E4)", () => {
     expect(r.scored?.length).toBe(10);
   });
 
-  it("fails the run on Un-01 link-integrity violation", async () => {
+  it("strips fabricated URLs embedded in descriptions (sanitizer) so Un-01 does not fire", async () => {
+    // The primary Un-01 surface for ClaudeCurator is the description field
+    // (the curator never sets ScoredItem.url — it's copied from the raw
+    // item). Since sanitizeDescriptions removes any embedded URL before the
+    // gate runs, a fabricated URL here must NOT fail the run.
     const client: CurationClient = {
       async call({ rawItems }) {
-        // First record rewrites its url to a fabricated domain.
         const records: CurationRecord[] = rawItems.map((r, idx) =>
           idx === 0
             ? mkRecord(r.id, {
                 description:
-                  "Item summary referencing https://evil.example.com/fabricated — no not a real link you'd want.",
+                  "Item summary referencing https://evil.example.com/fabricated — no not a real link you'd want to ship.",
               })
             : mkRecord(r.id),
         );
@@ -118,8 +121,10 @@ describe("Orchestrator + ClaudeCurator (E4)", () => {
       fetchAll: fixtureFetch(),
       curator,
     });
-    expect(r.status).toBe("failed");
-    expect(r.reason).toBe("Un-01");
+    expect(r.status).toBe("dry_run");
+    expect(
+      r.scored?.every((s) => !/https?:\/\//i.test(s.description)),
+    ).toBe(true);
   });
 
   // ai-builder-pulse-gwv — the hallucination circuit breaker must surface a

@@ -13,6 +13,7 @@ import {
   selectCurator,
 } from "./curator/index.js";
 import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
+import { sanitizeDescriptions } from "./curator/sanitizeDescriptions.js";
 import { writeSkippedItemsJson } from "./curator/deadletter.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
 import { bindRunId, log, makeRunId, registerSecretsFromEnv } from "./log.js";
@@ -486,6 +487,25 @@ async function runOrchestratorInner(
       skippedItemCount: skippedItems.length,
     });
   }
+
+  // Pre-Un-01 sanitizer. Curator prompt forbids URLs in descriptions, but
+  // models occasionally emit well-known homepage URLs recalled from training
+  // data (e.g. `cloud.qdrant.io` for a `qdrant/qdrant` trending item). Those
+  // URLs cannot be validated against the raw set and would trip Un-01,
+  // fail-closing the whole day. We strip them programmatically here so the
+  // integrity gate only sees the primary `ScoredItem.url` field — which
+  // still must trace back to raw. Logs any stripping so the prompt can be
+  // tightened if the same id keeps recurring.
+  const sanitized = sanitizeDescriptions(scored);
+  if (sanitized.strippedIds.length > 0) {
+    log.warn("curator description URL stripped", {
+      count: sanitized.strippedIds.length,
+      sample: sanitized.strippedIds.slice(0, 5),
+    });
+  }
+  // Rebind so every downstream consumer (link-integrity, renderer, archive)
+  // sees the cleaned descriptions, not the raw curator output.
+  scored = sanitized.items as ScoredItem[];
 
   // Un-01 link-integrity gate. Pass an empty allowlist: the renderer's
   // template URLs (newsletter home, archive, unsubscribe) are deterministic
