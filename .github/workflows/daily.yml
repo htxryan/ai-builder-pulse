@@ -84,9 +84,12 @@ jobs:
         id: orchestrator
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
+          CURATOR_MODEL_OVERRIDE: ${{ vars.CURATOR_MODEL_OVERRIDE }}
           BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+          REDDIT_FALLBACK_PUBLIC: ${{ vars.REDDIT_FALLBACK_PUBLIC }}
         run: pnpm start
       # E6: commit issues/{runDate}/ artifacts locally. If nothing was
       # written (DRY_RUN, skip statuses), the step records that and exits 0.
