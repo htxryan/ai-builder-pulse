@@ -22,6 +22,17 @@ on:
       - "issues/**"
       - "scripts/build-site.ts"
       - ".github/workflows/pages.yml"
+  # GitHub suppresses `push`-trigger chains when the pushing commit was
+  # made with the default GITHUB_TOKEN (anti-loop protection). The daily
+  # newsletter workflow commits the archive + latest.json with that
+  # token, so relying on `push` alone leaves the site stale. This
+  # `workflow_run` trigger fires when Daily Newsletter completes
+  # successfully, regardless of the commit author — same effect as a
+  # PAT-backed push without the credential surface.
+  workflow_run:
+    workflows: ["Daily Newsletter"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +52,11 @@ jobs:
   build:
     name: Build site artifact
     runs-on: ubuntu-latest
+    # For workflow_run triggers, only rebuild when the upstream daily
+    # newsletter run actually succeeded. A failed daily run has no new
+    # archive to deploy. Other triggers (push, workflow_dispatch) always
+    # proceed — `conclusion` is `null` under those and the fallback holds.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
