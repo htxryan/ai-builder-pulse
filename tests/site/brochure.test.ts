@@ -94,6 +94,13 @@ describe("brochure site — CSS craft (AC-13, AC-15)", () => {
     expect(css).not.toMatch(/url\(\s*https?:/i);
   });
 
+  it("forces [hidden] display:none so class selectors can't leave hidden elements visible (regression)", () => {
+    // Catches the class-specificity vs. user-agent-hidden bug: without this
+    // rule, `.latest__skeleton { display: flex }` overrode the `hidden`
+    // attribute and the skeleton stayed on screen after the preview loaded.
+    expect(css).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important/);
+  });
+
   it("respects prefers-reduced-motion by disabling the grid animation (AC-15)", () => {
     // The @media (prefers-reduced-motion: reduce) block must exist and
     // explicitly null out the grid floor's animation.
