@@ -24,8 +24,8 @@
 
 import { CATEGORIES, type Category, type ScoredItem } from "../types.js";
 import {
-  NEWSLETTER_ARCHIVE_URL,
-  NEWSLETTER_HOME_URL,
+  CANONICAL_ARCHIVE_URL,
+  CANONICAL_HOME_URL,
 } from "./allowlist.js";
 import { sourceBadge } from "./sourceBadge.js";
 
@@ -150,8 +150,8 @@ function renderFooter(): string {
   return [
     "---",
     "",
-    `[AI Builder Pulse](${NEWSLETTER_HOME_URL}) — daily briefing for engineers building with AI.`,
-    `Browse the [archive](${NEWSLETTER_ARCHIVE_URL}) or [unsubscribe]({{unsubscribe_url}}).`,
+    `[AI Builder Pulse](${CANONICAL_HOME_URL}) — daily briefing for engineers building with AI.`,
+    `Browse the [archive](${CANONICAL_ARCHIVE_URL}) or [unsubscribe]({{unsubscribe_url}}).`,
     "",
   ].join("\n");
 }

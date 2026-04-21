@@ -7,8 +7,10 @@
 # same-origin, so there is no CORS surface.
 #
 # This workflow is deploy-only: it does NOT execute the newsletter pipeline
-# (no pnpm install of runtime deps, no `pnpm start`). That keeps secrets
-# scoped to the daily.yml workflow and keeps this one fast.
+# (no Claude/Buttondown calls, no `pnpm start`). Assembly is delegated to
+# `pnpm build:site` (see scripts/build-site.ts) so the artifact layout
+# lives in versioned TypeScript rather than inline bash and can be extended
+# (markdown-to-HTML, archive index) without rewriting the workflow.
 
 name: Deploy brochure site
 
@@ -18,6 +20,7 @@ on:
     paths:
       - "site/**"
       - "issues/**"
+      - "scripts/build-site.ts"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -42,29 +45,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Assemble artifact
-        run: |
-          set -euo pipefail
-          mkdir -p _site
-          # Site files land at the artifact root so relative URLs like
-          # ./latest.json and ./issues/<date>/items.json resolve.
-          cp -R site/. _site/
-          # The brochure fetches ./latest.json (the pointer). Copy it to
-          # the artifact root AND keep the archive tree available under
-          # ./issues/ so the linked issues resolve.
-          if [ -f issues/latest.json ]; then
-            cp issues/latest.json _site/latest.json
-          else
-            echo "::warning::issues/latest.json is missing; brochure will fall back to archive link"
-          fi
-          if [ -d issues ]; then
-            mkdir -p _site/issues
-            # Exclude the top-level pointer (already at root) to avoid
-            # shipping it twice; keep everything else.
-            rsync -a --exclude 'latest.json' issues/ _site/issues/
-          fi
-          echo "Artifact layout:"
-          find _site -maxdepth 2 -type f | head -30
+        # Produces `_site/` from `site/` + `issues/`. See scripts/build-site.ts.
+        # A non-zero exit here fails the job, which is the contract AC-3 relies on.
+        run: pnpm build:site
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

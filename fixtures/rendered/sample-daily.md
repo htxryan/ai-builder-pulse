@@ -95,5 +95,5 @@ Commission released draft 2 of the implementing act for general-purpose AI oblig
 
 ---
 
-[AI Builder Pulse](https://buttondown.com/ai-builder-pulse) — daily briefing for engineers building with AI.
-Browse the [archive](https://buttondown.com/ai-builder-pulse/archive/) or [unsubscribe]({{unsubscribe_url}}).
+[AI Builder Pulse](https://pulse.ryanhenderson.dev) — daily briefing for engineers building with AI.
+Browse the [archive](https://pulse.ryanhenderson.dev/archive/) or [unsubscribe]({{unsubscribe_url}}).

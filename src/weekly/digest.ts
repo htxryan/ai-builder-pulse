@@ -9,6 +9,7 @@ import {
   type ScoredItem,
   ScoredItemSchema,
 } from "../types.js";
+import { CANONICAL_ARCHIVE_URL } from "../renderer/allowlist.js";
 import { sourceBadge } from "../renderer/sourceBadge.js";
 import { z } from "zod";
 
@@ -233,7 +234,7 @@ export function buildWeeklyDigest(input: WeeklyDigestInput): WeeklyDigest {
   sections.push("---");
   sections.push("");
   sections.push(
-    "Weekly digest compiled from the daily archive. See [the archive](https://buttondown.com/ai-builder-pulse/archive) for full daily issues.",
+    `Weekly digest compiled from the daily archive. See [the archive](${CANONICAL_ARCHIVE_URL}) for full daily issues.`,
   );
   sections.push("");
 

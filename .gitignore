@@ -10,6 +10,7 @@
 node_modules/
 dist/
 coverage/
+_site/
 .env
 .env.local
 *.log

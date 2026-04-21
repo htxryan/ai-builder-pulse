@@ -2,9 +2,9 @@
 // ---------------------------------------
 // One-shot JS: read issues/latest.json, then the referenced items.json,
 // populate the hero preview. localStorage cache with a 15min TTL. Every
-// fetch path has a graceful fallback linking to the Buttondown archive.
+// fetch path has a graceful fallback linking to the on-site archive.
 
-const ARCHIVE_FALLBACK_URL = "https://buttondown.com/ai-builder-pulse/archive/";
+const ARCHIVE_FALLBACK_URL = "/archive/";
 const CACHE_KEY = "abp:latest:v1";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const POINTER_PATH = "./latest.json"; // served from the artifact root
@@ -189,9 +189,11 @@ function renderPreview(pointer, payload) {
 
   const readFull = document.querySelector("[data-latest-read-full]");
   if (readFull) {
-    // Link to the markdown in the repo — the raw issue body. GitHub renders
-    // it nicely in the browser without us having to build an HTML viewer.
-    readFull.href = `https://github.com/htxryan/ai-builder-pulse/blob/main/${pointer.path}issue.md`;
+    // Same-origin link into the deployed issues tree. The artifact assembler
+    // copies `issues/<date>/` under `/issues/<date>/` so this resolves to the
+    // rendered issue page (T2/T3 convert the markdown to HTML). Using a
+    // relative path keeps the brochure portable across preview deploys.
+    readFull.href = `/${pointer.path}`;
   }
 
   if (skeleton) skeleton.hidden = true;
