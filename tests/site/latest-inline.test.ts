@@ -338,7 +338,12 @@ describe("buildSite — latest preview inlining (AC-4, AC-10)", () => {
           publishedAt: "2026-04-19T21:29:11.716Z",
         }),
       );
-      await mkdir(path.join(fx.issuesDir, "2026-04-19"), { recursive: true });
+      const issueDirMissing = path.join(fx.issuesDir, "2026-04-19");
+      await mkdir(issueDirMissing, { recursive: true });
+      // `issue.md` is required by T3 per-issue rendering (AC-14). The
+      // scenario under test is strictly "items.json missing" — seed the
+      // markdown so the page renderer has something to emit.
+      await writeFile(path.join(issueDirMissing, "issue.md"), "# stub\n");
       // Do NOT create items.json.
 
       const warnings: string[] = [];
@@ -367,7 +372,11 @@ describe("buildSite — latest preview inlining (AC-4, AC-10)", () => {
     }
   });
 
-  it("falls back to the skeleton when items.json is invalid JSON", async () => {
+  it("fails loudly when items.json is invalid JSON (T3 AC-13 supersedes earlier fallback)", async () => {
+    // Prior behaviour (T1) was to warn and keep the skeleton. T3 tightens
+    // this: a malformed items.json under `_site/issues/<date>/` fails the
+    // build with a file-named error so broken archive data can't ship
+    // silently. This test is the canonical expectation going forward.
     const fx = await makeFixture();
     try {
       await writeFile(path.join(fx.siteDir, "index.html"), SKELETON_HTML);
@@ -384,24 +393,16 @@ describe("buildSite — latest preview inlining (AC-4, AC-10)", () => {
       const issueDir = path.join(fx.issuesDir, "2026-04-19");
       await mkdir(issueDir, { recursive: true });
       await writeFile(path.join(issueDir, "items.json"), "{not json");
+      await writeFile(path.join(issueDir, "issue.md"), "# stub\n");
 
-      const origWarn = console.warn;
-      console.warn = () => {};
-      try {
-        await buildSite({
+      await expect(
+        buildSite({
           repoRoot: fx.root,
           outDir: fx.outDir,
           siteDir: fx.siteDir,
           issuesDir: fx.issuesDir,
-        });
-      } finally {
-        console.warn = origWarn;
-      }
-
-      const out = await readFile(path.join(fx.outDir, "index.html"), "utf8");
-      // Skeleton preserved; no hidden attribute added (untouched).
-      expect(out).toContain("data-latest-skeleton");
-      expect(out).not.toContain("Claude");
+        }),
+      ).rejects.toThrow(/items\.json/);
     } finally {
       await rm(fx.root, { recursive: true, force: true });
     }

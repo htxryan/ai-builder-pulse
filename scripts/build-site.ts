@@ -25,6 +25,10 @@ import {
   type LatestPointer,
   type PreviewItem,
 } from "./lib/latestPreview.js";
+import { renderIssuePage } from "./lib/issuePage.js";
+
+const CANONICAL_ORIGIN = "https://pulse.ryanhenderson.dev";
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 interface BuildOptions {
   readonly repoRoot: string;
@@ -268,6 +272,102 @@ export async function buildSite(opts: BuildOptions): Promise<void> {
   //    progressive enhancement. Any failure falls back to the untouched
   //    skeleton (logged as a warning) so the build cannot break the site.
   await inlineLatestPreview(outDir, issuesDir);
+
+  // 5. Render a per-issue HTML page for every archived date directory
+  //    under `<outDir>/issues/`. Enumerated from the destination tree so
+  //    the pages are driven by what actually shipped (step 3 above),
+  //    not the source. `issue.md` is required; missing markdown for a
+  //    copied date directory is a loud failure (R15 / AC-14). Malformed
+  //    `items.json` is also a loud failure (R14 / AC-13).
+  await renderIssuePages(path.join(outDir, "issues"));
+}
+
+/**
+ * List YYYY-MM-DD subdirectories under `<outDir>/issues/` in sorted
+ * order. Non-directory entries and names that don't match the date
+ * pattern are ignored (defensive — only the copy step writes into this
+ * tree).
+ */
+async function listIssueDates(destIssuesDir: string): Promise<string[]> {
+  if (!(await pathExists(destIssuesDir))) return [];
+  const entries = await readdir(destIssuesDir, { withFileTypes: true });
+  const dates: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (!ISO_DATE_RE.test(entry.name)) continue;
+    dates.push(entry.name);
+  }
+  dates.sort();
+  return dates;
+}
+
+/**
+ * Parse `<dateDir>/items.json` into a plain `{ items: unknown[] }`
+ * shape. Throws with a clear, file-qualified message on JSON parse
+ * failure or shape violation (AC-13 / R14). Missing file → returns
+ * `{ items: [] }` so a page can still render with an empty sidebar;
+ * the mandatory artifact is `issue.md`, not `items.json`.
+ */
+async function loadIssueItems(dateDir: string): Promise<{ items: unknown[] }> {
+  const p = path.join(dateDir, "items.json");
+  if (!(await pathExists(p))) {
+    return { items: [] };
+  }
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`failed to read ${p}: ${msg}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`failed to parse ${p}: ${msg}`);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`invalid shape in ${p}: expected object`);
+  }
+  const items = (parsed as Record<string, unknown>)["items"];
+  if (!Array.isArray(items)) {
+    throw new Error(`invalid shape in ${p}: expected { items: [] }`);
+  }
+  return { items: items as unknown[] };
+}
+
+/**
+ * Render `<destIssuesDir>/<date>/index.html` for every date directory.
+ * Prev/next are computed from the sorted date list: prev is the
+ * chronologically-earlier neighbour, next is the later one. Boundary
+ * dates get only one side.
+ */
+async function renderIssuePages(destIssuesDir: string): Promise<void> {
+  const dates = await listIssueDates(destIssuesDir);
+  for (let i = 0; i < dates.length; i += 1) {
+    const date = dates[i] as string;
+    const dateDir = path.join(destIssuesDir, date);
+    const mdPath = path.join(dateDir, "issue.md");
+    if (!(await pathExists(mdPath))) {
+      throw new Error(
+        `issue.md missing for ${date} (expected at ${mdPath})`,
+      );
+    }
+    const markdown = await readFile(mdPath, "utf8");
+    const { items } = await loadIssueItems(dateDir);
+    const prevDate = i > 0 ? dates[i - 1] : undefined;
+    const nextDate = i + 1 < dates.length ? dates[i + 1] : undefined;
+    const html = renderIssuePage({
+      date,
+      markdown,
+      items,
+      prev: prevDate ? { date: prevDate } : undefined,
+      next: nextDate ? { date: nextDate } : undefined,
+      canonicalOrigin: CANONICAL_ORIGIN,
+    });
+    await writeFile(path.join(dateDir, "index.html"), html, "utf8");
+  }
 }
 
 async function main(): Promise<void> {

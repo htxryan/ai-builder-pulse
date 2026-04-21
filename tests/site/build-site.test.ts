@@ -276,6 +276,157 @@ describe("buildSite — degraded paths", () => {
   });
 });
 
+describe("buildSite — per-issue page rendering (T3)", () => {
+  async function seedMultiDateTree(fx: Fixture): Promise<void> {
+    // Minimal brochure layout (reuses the standard tree seed).
+    await writeFile(path.join(fx.siteDir, "index.html"), "<!doctype html><title>x</title>");
+    await writeFile(path.join(fx.siteDir, "app.js"), "// app");
+    await writeFile(path.join(fx.siteDir, "styles.css"), "body{}");
+
+    // Three dates so prev/next wiring is non-trivial.
+    const dates = ["2026-04-18", "2026-04-19", "2026-04-20"];
+    for (const d of dates) {
+      const dir = path.join(fx.issuesDir, d);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, "items.json"),
+        JSON.stringify({
+          items: [
+            {
+              id: `${d}-1`,
+              source: "hn",
+              title: `Item for ${d}`,
+              url: "https://example.com/x",
+              category: "Tools & Launches",
+              keep: true,
+              relevanceScore: 0.8,
+            },
+          ],
+          itemCount: { total: 1, kept: 1 },
+        }),
+      );
+      await writeFile(
+        path.join(dir, "issue.md"),
+        `# AI Builder Pulse — ${d}\n\nBody for ${d}.\n`,
+      );
+    }
+    // latest pointer references the newest date so the inliner has valid input.
+    await writeFile(
+      path.join(fx.issuesDir, "latest.json"),
+      JSON.stringify({
+        date: "2026-04-20",
+        path: "issues/2026-04-20/",
+        publishId: "em_t3",
+        publishedAt: "2026-04-20T06:07:00.000Z",
+      }),
+    );
+  }
+
+  it("renders index.html for every date and wires prev/next for middle dates", async () => {
+    const fx = await makeFixture();
+    try {
+      await seedMultiDateTree(fx);
+      await buildSite({
+        repoRoot: fx.root,
+        outDir: fx.outDir,
+        siteDir: fx.siteDir,
+        issuesDir: fx.issuesDir,
+      });
+      for (const d of ["2026-04-18", "2026-04-19", "2026-04-20"]) {
+        const p = path.join(fx.outDir, "issues", d, "index.html");
+        expect(await exists(p)).toBe(true);
+      }
+      const mid = await readFile(
+        path.join(fx.outDir, "issues", "2026-04-19", "index.html"),
+        "utf8",
+      );
+      expect(mid).toContain(
+        '<link rel="canonical" href="https://pulse.ryanhenderson.dev/issues/2026-04-19/" />',
+      );
+      // Middle date has both prev (18) and next (20).
+      expect(mid).toContain('href="/issues/2026-04-18/"');
+      expect(mid).toContain('href="/issues/2026-04-20/"');
+    } finally {
+      await rm(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("boundary dates render with only one side of prev/next", async () => {
+    const fx = await makeFixture();
+    try {
+      await seedMultiDateTree(fx);
+      await buildSite({
+        repoRoot: fx.root,
+        outDir: fx.outDir,
+        siteDir: fx.siteDir,
+        issuesDir: fx.issuesDir,
+      });
+      const first = await readFile(
+        path.join(fx.outDir, "issues", "2026-04-18", "index.html"),
+        "utf8",
+      );
+      expect(first).not.toContain('class="issue-nav__prev"');
+      expect(first).toContain('href="/issues/2026-04-19/"');
+      expect(first).toContain('class="issue-nav__next"');
+
+      const last = await readFile(
+        path.join(fx.outDir, "issues", "2026-04-20", "index.html"),
+        "utf8",
+      );
+      expect(last).toContain('href="/issues/2026-04-19/"');
+      expect(last).toContain('class="issue-nav__prev"');
+      expect(last).not.toContain('class="issue-nav__next"');
+    } finally {
+      await rm(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails with a clear message when issue.md is missing for a date directory", async () => {
+    const fx = await makeFixture();
+    try {
+      await writeFile(path.join(fx.siteDir, "index.html"), "<title>x</title>");
+      const dir = path.join(fx.issuesDir, "2026-04-19");
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        path.join(dir, "items.json"),
+        JSON.stringify({ items: [] }),
+      );
+      // Intentionally no issue.md.
+      await expect(
+        buildSite({
+          repoRoot: fx.root,
+          outDir: fx.outDir,
+          siteDir: fx.siteDir,
+          issuesDir: fx.issuesDir,
+        }),
+      ).rejects.toThrow(/issue\.md missing for 2026-04-19/);
+    } finally {
+      await rm(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails with a file-named message when items.json is malformed", async () => {
+    const fx = await makeFixture();
+    try {
+      await writeFile(path.join(fx.siteDir, "index.html"), "<title>x</title>");
+      const dir = path.join(fx.issuesDir, "2026-04-19");
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, "items.json"), "{not json");
+      await writeFile(path.join(dir, "issue.md"), "# x\n");
+      await expect(
+        buildSite({
+          repoRoot: fx.root,
+          outDir: fx.outDir,
+          siteDir: fx.siteDir,
+          issuesDir: fx.issuesDir,
+        }),
+      ).rejects.toThrow(/items\.json/);
+    } finally {
+      await rm(fx.root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("scripts/build-site.ts — end-to-end exit code (AC-3)", () => {
   it("exits non-zero with a clear error when site/ is missing", async () => {
     const fx = await makeFixture();
