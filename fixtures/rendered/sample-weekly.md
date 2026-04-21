@@ -44,4 +44,4 @@ A sufficiently descriptive summary for item sat-rss.
 
 ---
 
-Weekly digest compiled from the daily archive. See [the archive](https://buttondown.com/ai-builder-pulse/archive) for full daily issues.
+Weekly digest compiled from the daily archive. See [the archive](https://pulse.ryanhenderson.dev/archive/) for full daily issues.
