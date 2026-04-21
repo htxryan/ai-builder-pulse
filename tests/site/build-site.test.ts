@@ -62,7 +62,13 @@ async function seedStandardTree(fx: Fixture): Promise<void> {
   );
   const issueDir = path.join(fx.issuesDir, "2026-04-19");
   await mkdir(issueDir, { recursive: true });
-  await writeFile(path.join(issueDir, "items.json"), "[]");
+  // Empty-but-valid items payload keeps the build-site inliner quiet (the
+  // shape is what the latest-preview pure helper expects). Inlining
+  // behaviour itself is covered by `latest-inline.test.ts`.
+  await writeFile(
+    path.join(issueDir, "items.json"),
+    JSON.stringify({ items: [], itemCount: { total: 0, kept: 0 } }),
+  );
   await writeFile(path.join(issueDir, "issue.md"), "# issue");
 }
 

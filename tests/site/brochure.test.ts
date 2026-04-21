@@ -204,6 +204,15 @@ describe("brochure site — pure helpers (AC-1..AC-4)", () => {
     expect(counts).toContainEqual(["Techniques", 1]);
   });
 
+  it("read-full CTA target is same-origin, not github.com (AC-10)", () => {
+    const appJs = readSite("app.js");
+    // Must not link visitors into github.com/...blob/main/... for the issue body;
+    // the rendered HTML lives at /issues/<date>/ in the deployed artifact.
+    expect(appJs).not.toMatch(/github\.com\/[^\s"`)]+blob\/main/);
+    // Must compute the CTA href from the pointer's path, same-origin.
+    expect(appJs).toMatch(/readFull\.href\s*=\s*`\/\$\{pointer\.path\}`/);
+  });
+
   it("sourceLabel maps source ids to human strings (including r/<sub>)", async () => {
     const mod = await import("../../site/app.js");
     const { sourceLabel } = mod.__test as {

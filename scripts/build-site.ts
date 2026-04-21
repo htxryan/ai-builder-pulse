@@ -15,9 +15,16 @@
 // Idempotent: rerunning on an existing `<out>/` yields the same tree.
 // Fails loud on any I/O error with a non-zero exit.
 
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+
+import {
+  inlineLatestIntoHtml,
+  type ItemsPayload,
+  type LatestPointer,
+  type PreviewItem,
+} from "./lib/latestPreview.js";
 
 interface BuildOptions {
   readonly repoRoot: string;
@@ -100,6 +107,130 @@ async function copyIssuesTree(
   }
 }
 
+/**
+ * Load + validate `issues/latest.json`. Returns `null` on any shape or
+ * I/O error; the caller falls back to the unfilled skeleton and emits a
+ * warning. This intentionally mirrors the defensive checks in
+ * `site/app.js` `parsePointer` so a build-time inline cannot produce
+ * a link the client wouldn't accept.
+ */
+async function loadLatestPointer(
+  issuesDir: string,
+): Promise<LatestPointer | null> {
+  const p = path.join(issuesDir, "latest.json");
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch {
+    return null;
+  }
+  let obj: unknown;
+  try {
+    obj = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  const date = o["date"];
+  const pathField = o["path"];
+  const publishId = o["publishId"];
+  const publishedAt = o["publishedAt"];
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  if (
+    typeof pathField !== "string" ||
+    !pathField.startsWith("issues/") ||
+    !pathField.endsWith("/") ||
+    pathField.includes("..") ||
+    pathField.includes("//")
+  ) {
+    return null;
+  }
+  if (typeof publishId !== "string" || publishId.length === 0) return null;
+  if (typeof publishedAt !== "string") return null;
+  return { date, path: pathField, publishId, publishedAt };
+}
+
+/**
+ * Load the items.json referenced by a validated pointer. Returns `null`
+ * if the file is missing or the shape is invalid.
+ */
+async function loadItemsPayload(
+  issuesDir: string,
+  pointer: LatestPointer,
+): Promise<ItemsPayload | null> {
+  // `pointer.path` is already constrained to `issues/<date>/` by
+  // `loadLatestPointer`, so this join stays under `issuesDir`.
+  const rel = pointer.path.replace(/^issues\//, "");
+  const p = path.join(issuesDir, rel, "items.json");
+  let raw: string;
+  try {
+    raw = await readFile(p, "utf8");
+  } catch {
+    return null;
+  }
+  let obj: unknown;
+  try {
+    obj = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  if (!Array.isArray(o["items"])) return null;
+  const items = (o["items"] as unknown[]).filter(
+    (x): x is PreviewItem => typeof x === "object" && x !== null,
+  );
+  const itemCountRaw = o["itemCount"];
+  const itemCount =
+    itemCountRaw && typeof itemCountRaw === "object"
+      ? (itemCountRaw as ItemsPayload["itemCount"])
+      : undefined;
+  return itemCount ? { items, itemCount } : { items };
+}
+
+/**
+ * Read the copied `<outDir>/index.html`, attempt to inline the latest
+ * preview, and write it back. Any failure falls back to the untouched
+ * skeleton — the brochure script re-hydrates client-side regardless.
+ */
+async function inlineLatestPreview(
+  outDir: string,
+  issuesDir: string,
+): Promise<void> {
+  const indexPath = path.join(outDir, "index.html");
+  let html: string;
+  try {
+    html = await readFile(indexPath, "utf8");
+  } catch {
+    // No index.html to transform — nothing to do. The copy step is the
+    // source of truth; if it didn't land, that's already a loud error
+    // upstream.
+    return;
+  }
+
+  const pointer = await loadLatestPointer(issuesDir);
+  if (!pointer) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "::warning::build-site: latest pointer unavailable or invalid; shipping untouched skeleton",
+    );
+    return;
+  }
+
+  const items = await loadItemsPayload(issuesDir, pointer);
+  if (!items) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `::warning::build-site: items.json for ${pointer.date} unavailable or invalid; shipping untouched skeleton`,
+    );
+    return;
+  }
+
+  const filled = inlineLatestIntoHtml(html, { pointer, items });
+  await writeFile(indexPath, filled, "utf8");
+}
+
 export async function buildSite(opts: BuildOptions): Promise<void> {
   const { outDir, siteDir, issuesDir } = opts;
 
@@ -129,6 +260,14 @@ export async function buildSite(opts: BuildOptions): Promise<void> {
   if (await pathExists(issuesDir)) {
     await copyIssuesTree(issuesDir, path.join(outDir, "issues"));
   }
+
+  // 4. Pre-fill `<outDir>/index.html` with the latest issue's top pick +
+  //    categories so the first paint shows real content instead of a
+  //    skeleton. The client-side `loadLatest()` still runs and can
+  //    overwrite this with fresher cached data; the inline is strictly
+  //    progressive enhancement. Any failure falls back to the untouched
+  //    skeleton (logged as a warning) so the build cannot break the site.
+  await inlineLatestPreview(outDir, issuesDir);
 }
 
 async function main(): Promise<void> {

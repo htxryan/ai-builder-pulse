@@ -189,9 +189,11 @@ function renderPreview(pointer, payload) {
 
   const readFull = document.querySelector("[data-latest-read-full]");
   if (readFull) {
-    // Link to the markdown in the repo — the raw issue body. GitHub renders
-    // it nicely in the browser without us having to build an HTML viewer.
-    readFull.href = `https://github.com/htxryan/ai-builder-pulse/blob/main/${pointer.path}issue.md`;
+    // Same-origin link into the deployed issues tree. The artifact assembler
+    // copies `issues/<date>/` under `/issues/<date>/` so this resolves to the
+    // rendered issue page (T2/T3 convert the markdown to HTML). Using a
+    // relative path keeps the brochure portable across preview deploys.
+    readFull.href = `/${pointer.path}`;
   }
 
   if (skeleton) skeleton.hidden = true;
