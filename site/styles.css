@@ -962,6 +962,116 @@ a:focus-visible {
   max-width: none;
 }
 
+/* === archive index ======================================================== */
+/* Centered single-column list of every archived issue, emitted at
+ * `/archive/index.html` by `scripts/lib/archivePage.ts`. Reuses the
+ * topnav + footer chrome and the shared color tokens; only the list row
+ * layout + empty-state sit here. */
+
+.archive-header {
+  padding: 20px 20px 0;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.archive {
+  max-width: 70ch;
+  margin: 0 auto;
+  padding: 24px 20px 60px;
+}
+
+.archive__title-main {
+  font-family: var(--f-sans);
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+  color: var(--c-ink);
+}
+
+.archive__tagline {
+  font-family: var(--f-mono);
+  font-size: 0.85rem;
+  color: var(--c-ink-mute);
+  margin: 0 0 32px;
+  letter-spacing: 0.04em;
+}
+
+.archive__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px dashed rgba(255, 43, 214, 0.25);
+}
+
+.archive__entry {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px dashed rgba(255, 43, 214, 0.2);
+}
+
+.archive__date {
+  font-family: var(--f-mono);
+  font-size: 0.8rem;
+  color: var(--c-ink-mute);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.archive__title {
+  font-size: 1.05rem;
+  line-height: 1.35;
+  color: var(--c-ink);
+  border-bottom: 1px solid rgba(255, 43, 214, 0.3);
+  min-width: 0;
+}
+.archive__title:hover,
+.archive__title:focus-visible {
+  color: var(--c-magenta);
+  border-bottom-color: var(--c-magenta);
+}
+
+.archive__count {
+  font-family: var(--f-mono);
+  font-size: 0.8rem;
+  color: var(--c-cyan);
+  white-space: nowrap;
+  text-align: right;
+}
+
+.archive__empty {
+  text-align: center;
+  padding: 48px 0 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.archive__empty-text {
+  font-family: var(--f-mono);
+  font-size: 0.95rem;
+  color: var(--c-ink-dim);
+  margin: 0;
+}
+
+@media (max-width: 520px) {
+  .archive__entry {
+    grid-template-columns: auto 1fr;
+    row-gap: 4px;
+  }
+  .archive__count {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+
 /* ---------- reduced motion ------------------------------------------------ */
 
 @media (prefers-reduced-motion: reduce) {

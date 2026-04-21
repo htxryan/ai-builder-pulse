@@ -427,6 +427,124 @@ describe("buildSite — per-issue page rendering (T3)", () => {
   });
 });
 
+describe("buildSite — archive index (T4)", () => {
+  it("renders <out>/archive/index.html listing both dates in reverse order", async () => {
+    const fx = await makeFixture();
+    try {
+      // Minimal brochure layout. Include the real site/index.html topnav
+      // shape so we can verify the retargeted archive link survives the
+      // copy step unchanged (AC-10).
+      await writeFile(
+        path.join(fx.siteDir, "index.html"),
+        [
+          "<!doctype html>",
+          "<html><head><title>x</title></head><body>",
+          '<nav class="topnav"><a class="topnav__archive" href="/archive/">archive</a></nav>',
+          "</body></html>",
+        ].join("\n"),
+      );
+      await writeFile(path.join(fx.siteDir, "styles.css"), "body{}");
+
+      const dates = ["2026-04-18", "2026-04-19"];
+      for (const d of dates) {
+        const dir = path.join(fx.issuesDir, d);
+        await mkdir(dir, { recursive: true });
+        await writeFile(
+          path.join(dir, "items.json"),
+          JSON.stringify({
+            items: [
+              {
+                id: `${d}-1`,
+                source: "hn",
+                title: `Item for ${d}`,
+                url: "https://example.com/x",
+                category: "Tools & Launches",
+                keep: true,
+                relevanceScore: 0.8,
+              },
+              {
+                // An unkept item must not inflate the count.
+                id: `${d}-2`,
+                source: "hn",
+                title: "Dropped",
+                url: "https://example.com/y",
+                category: "Tools & Launches",
+                keep: false,
+              },
+            ],
+            itemCount: { total: 2, kept: 1 },
+          }),
+        );
+        await writeFile(
+          path.join(dir, "issue.md"),
+          `# AI Builder Pulse — ${d}\n\nBody for ${d}.\n`,
+        );
+      }
+      await writeFile(
+        path.join(fx.issuesDir, "latest.json"),
+        JSON.stringify({
+          date: "2026-04-19",
+          path: "issues/2026-04-19/",
+          publishId: "em_t4",
+          publishedAt: "2026-04-19T06:07:00.000Z",
+        }),
+      );
+
+      await buildSite({
+        repoRoot: fx.root,
+        outDir: fx.outDir,
+        siteDir: fx.siteDir,
+        issuesDir: fx.issuesDir,
+      });
+
+      const archivePath = path.join(fx.outDir, "archive", "index.html");
+      expect(await exists(archivePath)).toBe(true);
+      const html = await readFile(archivePath, "utf8");
+      // Both dates present, newest-first.
+      const i19 = html.indexOf('href="/issues/2026-04-19/"');
+      const i18 = html.indexOf('href="/issues/2026-04-18/"');
+      expect(i19).toBeGreaterThan(-1);
+      expect(i18).toBeGreaterThan(i19);
+      // Kept-only count.
+      expect(html).toContain("1 story");
+
+      // Topnav archive link in the copied brochure index points at /archive/.
+      const indexHtml = await readFile(path.join(fx.outDir, "index.html"), "utf8");
+      expect(indexHtml).toMatch(/class="topnav__archive"\s+href="\/archive\/"/);
+      expect(indexHtml).not.toContain("buttondown.com/ai-builder-pulse/archive");
+    } finally {
+      await rm(fx.root, { recursive: true, force: true });
+    }
+  });
+
+  it("still emits archive/index.html with an empty-state when there are zero date folders", async () => {
+    const fx = await makeFixture();
+    try {
+      await writeFile(
+        path.join(fx.siteDir, "index.html"),
+        "<!doctype html><title>x</title>",
+      );
+      await writeFile(path.join(fx.siteDir, "styles.css"), "body{}");
+      // Deliberately do NOT seed any issues/<date>/ folders or latest.json.
+
+      await buildSite({
+        repoRoot: fx.root,
+        outDir: fx.outDir,
+        siteDir: fx.siteDir,
+        issuesDir: fx.issuesDir,
+      });
+
+      const archivePath = path.join(fx.outDir, "archive", "index.html");
+      expect(await exists(archivePath)).toBe(true);
+      const html = await readFile(archivePath, "utf8");
+      expect(html).toContain("No issues archived yet.");
+      expect(html).not.toContain("<ul");
+    } finally {
+      await rm(fx.root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("scripts/build-site.ts — end-to-end exit code (AC-3)", () => {
   it("exits non-zero with a clear error when site/ is missing", async () => {
     const fx = await makeFixture();

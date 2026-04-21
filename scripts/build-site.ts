@@ -20,12 +20,15 @@ import path from "node:path";
 import process from "node:process";
 
 import {
+  formatDateHuman,
   inlineLatestIntoHtml,
   type ItemsPayload,
   type LatestPointer,
   type PreviewItem,
 } from "./lib/latestPreview.js";
 import { renderIssuePage } from "./lib/issuePage.js";
+import { extractH1 } from "./lib/renderMarkdown.js";
+import { renderArchivePage, type ArchiveEntry } from "./lib/archivePage.js";
 
 const CANONICAL_ORIGIN = "https://pulse.ryanhenderson.dev";
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -280,6 +283,13 @@ export async function buildSite(opts: BuildOptions): Promise<void> {
   //    copied date directory is a loud failure (R15 / AC-14). Malformed
   //    `items.json` is also a loud failure (R14 / AC-13).
   await renderIssuePages(path.join(outDir, "issues"));
+
+  // 6. Render the archive index at `<outDir>/archive/index.html`. Always
+  //    emitted — even with zero archived dates — so the brochure topnav
+  //    (which links at `/archive/`) never 404s. Driven by the same
+  //    destination tree as step 5, so a date directory that failed to
+  //    render above would have already aborted the build.
+  await renderArchiveIndex(outDir, path.join(outDir, "issues"));
 }
 
 /**
@@ -368,6 +378,55 @@ async function renderIssuePages(destIssuesDir: string): Promise<void> {
     });
     await writeFile(path.join(dateDir, "index.html"), html, "utf8");
   }
+}
+
+/**
+ * Count items with `keep === true` from a parsed items payload. Defensive
+ * against malformed entries (non-objects are ignored) so a single bad row
+ * doesn't poison the count.
+ */
+function countKept(items: readonly unknown[]): number {
+  let n = 0;
+  for (const it of items) {
+    if (!it || typeof it !== "object") continue;
+    if ((it as { keep?: unknown }).keep === true) n += 1;
+  }
+  return n;
+}
+
+/**
+ * Enumerate the shipped issue directories, derive an `ArchiveEntry` for
+ * each (title from `issue.md` H1 with a date-qualified fallback, kept
+ * count from `items.json`), sort newest-first, and write the archive
+ * index HTML. Always emits the file — zero entries → empty-state page —
+ * so the brochure's `/archive/` link is never a 404.
+ */
+async function renderArchiveIndex(
+  outDir: string,
+  destIssuesDir: string,
+): Promise<void> {
+  const dates = await listIssueDates(destIssuesDir);
+  const entries: ArchiveEntry[] = [];
+  for (const date of dates) {
+    const dateDir = path.join(destIssuesDir, date);
+    const mdPath = path.join(dateDir, "issue.md");
+    // `renderIssuePages` already asserted `issue.md` existed before we
+    // got here, so treat a missing file as an invariant violation rather
+    // than silently falling back.
+    const markdown = await readFile(mdPath, "utf8");
+    const h1 = extractH1(markdown);
+    const title = h1 ?? `AI Builder Pulse \u00b7 ${formatDateHuman(date)}`;
+    const { items } = await loadIssueItems(dateDir);
+    entries.push({ date, title, keptCount: countKept(items) });
+  }
+  // Newest-first: sort date strings descending. ISO-8601 YYYY-MM-DD is
+  // lexicographically ordered, so a plain string compare is correct.
+  entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  const archiveDir = path.join(outDir, "archive");
+  await mkdir(archiveDir, { recursive: true });
+  const html = renderArchivePage(entries, CANONICAL_ORIGIN);
+  await writeFile(path.join(archiveDir, "index.html"), html, "utf8");
 }
 
 async function main(): Promise<void> {
