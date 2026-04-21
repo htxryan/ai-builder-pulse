@@ -2,9 +2,9 @@
 // ---------------------------------------
 // One-shot JS: read issues/latest.json, then the referenced items.json,
 // populate the hero preview. localStorage cache with a 15min TTL. Every
-// fetch path has a graceful fallback linking to the Buttondown archive.
+// fetch path has a graceful fallback linking to the on-site archive.
 
-const ARCHIVE_FALLBACK_URL = "https://buttondown.com/ai-builder-pulse/archive/";
+const ARCHIVE_FALLBACK_URL = "/archive/";
 const CACHE_KEY = "abp:latest:v1";
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const POINTER_PATH = "./latest.json"; // served from the artifact root

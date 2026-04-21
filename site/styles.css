@@ -10,7 +10,7 @@
   --c-bg-2: #120636;
   --c-ink: #f5f3ff;
   --c-ink-dim: #b6a8ea;
-  --c-ink-mute: #6f5fa8;
+  --c-ink-mute: #8a7cc8;
   --c-magenta: #ff2bd6;
   --c-cyan: #00f0ff;
   --c-amber: #ffb347;
@@ -370,6 +370,8 @@ a:focus-visible {
 .signup__input:focus-visible {
   background: rgba(255, 43, 214, 0.08);
   border-radius: var(--radius-sm);
+  outline: 2px solid var(--c-magenta);
+  outline-offset: 2px;
 }
 .signup__success {
   font-family: var(--f-mono);
@@ -806,6 +808,8 @@ a:focus-visible {
 .issue-body__content p {
   margin: 0 0 16px;
   color: var(--c-ink-dim);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .issue-body__content ul,
@@ -816,6 +820,8 @@ a:focus-visible {
 }
 .issue-body__content li {
   margin: 4px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .issue-body__content blockquote {
@@ -961,6 +967,19 @@ a:focus-visible {
 .signup--aside {
   max-width: none;
 }
+.signup--aside .signup__row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.signup--aside .signup__input {
+  min-width: 0;
+  width: 100%;
+}
+.signup--aside .btn--primary {
+  width: 100%;
+  justify-content: center;
+}
 
 /* === archive index ======================================================== */
 /* Centered single-column list of every archived issue, emitted at
@@ -1012,8 +1031,14 @@ a:focus-visible {
   grid-template-columns: auto 1fr auto;
   align-items: baseline;
   gap: 16px;
-  padding: 14px 0;
+  padding: 14px 12px;
+  margin: 0 -12px;
   border-bottom: 1px dashed rgba(255, 43, 214, 0.2);
+  transition: background 120ms ease;
+}
+.archive__entry:hover,
+.archive__entry:focus-within {
+  background: rgba(0, 240, 255, 0.04);
 }
 
 .archive__date {
@@ -1030,6 +1055,8 @@ a:focus-visible {
   color: var(--c-ink);
   border-bottom: 1px solid rgba(255, 43, 214, 0.3);
   min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .archive__title:hover,
 .archive__title:focus-visible {

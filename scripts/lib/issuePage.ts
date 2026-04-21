@@ -250,13 +250,24 @@ export function renderIssuePage(input: IssuePageInput): string {
 
   const metaLine = `${humanDate} \u00b7 ${keptCount} ${keptCount === 1 ? "story" : "stories"} \u00b7 ${categories.length} ${categories.length === 1 ? "category" : "categories"}`;
 
-  const asideHtml = [
-    renderStatsAside(keptCount, categories.length),
-    renderTopPickAside(top),
-    renderCategoriesAside(categories),
-    renderSourceMixAside(mix),
-    renderSignupAside(),
-  ].join("\n");
+  // When no items were kept, collapse the three "No kept items." cards
+  // into a single banner so the sidebar reads as one coherent state.
+  const asideHtml =
+    keptCount === 0
+      ? [
+          `      <div class="issue-aside__card">`,
+          `        <h3 class="issue-aside__heading">this issue</h3>`,
+          `        <p class="issue-aside__empty">No kept items for this run \u2014 see prior days in the archive.</p>`,
+          `      </div>`,
+          renderSignupAside(),
+        ].join("\n")
+      : [
+          renderStatsAside(keptCount, categories.length),
+          renderTopPickAside(top),
+          renderCategoriesAside(categories),
+          renderSourceMixAside(mix),
+          renderSignupAside(),
+        ].join("\n");
 
   const prevNextHtml = renderPrevNext(prev, next);
 
