@@ -5,7 +5,7 @@
 import type { RawItem } from "../types.js";
 import { CATEGORIES } from "../types.js";
 
-export const PROMPT_VERSION = "2026-04-19.1";
+export const PROMPT_VERSION = "2026-04-21.1";
 
 // DA-U-07 — single source of truth for the curator model id. Consumed by
 // `anthropicClient.ts` (direct SDK path) and `deepagent/adapter.ts`
@@ -65,7 +65,10 @@ ${(Object.entries(CATEGORY_DEFINITIONS) as [string, string][])
   .join("\n")}
 
 CRITICAL RULES:
-1. Never emit a URL in the description field. If you want to reference a link, name it by title only.
+1. Never emit a URL in the description field. Description is plain prose — no markdown, no hyperlinks, no bare URLs, no "https://" anywhere in the text. This rule is ABSOLUTE, even when you know the project's canonical homepage or marketing site. Reference products, docs, and sites by name only.
+   Examples of VIOLATIONS (do NOT do this): "Learn more at https://cloud.qdrant.io/". "See [docs](https://example.com/docs)". "Deployed via https://vercel.com".
+   Correct form: "Qdrant's managed cloud.", "See their docs.", "Deployed via Vercel."
+   A single URL in description will cause the entire batch to be rejected by the link-integrity gate.
 2. Never invent facts. If the title/metadata is ambiguous, stay generic in the description.
 3. Return all records in a single flat list — no nesting, no grouping by category.
 4. The response MUST satisfy the provided JSON schema. Fields must be lowercase-typed per the schema; category string must match exactly.

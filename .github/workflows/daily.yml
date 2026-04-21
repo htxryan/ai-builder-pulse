@@ -90,6 +90,10 @@ jobs:
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
           REDDIT_FALLBACK_PUBLIC: ${{ vars.REDDIT_FALLBACK_PUBLIC }}
+          # Used by the GitHub Trending collector's homepage-enrichment
+          # lookup (authenticated 5000/hr rate limit). Optional; absent →
+          # unauthenticated 60/hr fallback.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm start
       # E6: commit issues/{runDate}/ artifacts locally. If nothing was
       # written (DRY_RUN, skip statuses), the step records that and exits 0.
