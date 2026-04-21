@@ -15,6 +15,14 @@ useDefault = true
 
 [allowlist]
 paths = [
+    # Daily archives of collector-sourced raw items. URLs often contain
+    # high-entropy ?token= query params that tracker-laden feeds embed.
+    # These are not secrets we own.
     '''issues/.*''',
+    # Tool-generated manifest from the Gemini CLI; entropy matches on
+    # internal file hashes, not secrets.
     '''\.gemini/.*''',
+    # Test fixtures include deliberately fake API keys to exercise
+    # redaction paths (see tests/log.test.ts).
+    '''tests/.*''',
 ]

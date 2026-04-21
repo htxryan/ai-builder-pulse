@@ -131,6 +131,10 @@ jobs:
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Explicitly point the action at our repo-root config. Without
+          # this the action defaults still fired on issues/ archive URLs
+          # and test-fixture fake keys.
+          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml
       # Un-06: if `git push` fails after the Buttondown 2xx, the archive
       # commit (including `.published`) stays only on the ephemeral runner.
       # The next cron run's pre-flight `git ls-tree origin/...` will NOT
