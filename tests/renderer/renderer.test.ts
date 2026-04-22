@@ -193,18 +193,48 @@ describe("renderIssue (C5)", () => {
   });
 
   describe("HN thread link suffix (epic ai-builder-pulse-acr)", () => {
-    // AC-1: HN-source daily item headers include the parenthesized HN link.
-    it("AC-1: daily item header for HN source appends ([HN](news.ycombinator)) link", () => {
+    // AC-1: every kept HN-source daily item header emits the parenthesized HN link.
+    it("AC-1: every kept HN-source daily item header appends ([HN](...)) link; non-HN unchanged", () => {
+      const rssItem: ScoredItem = {
+        id: "rss-mixin",
+        source: "rss",
+        title: "RSS sibling",
+        url: "https://example.com/rss-sibling",
+        score: 1,
+        publishedAt: "2026-04-18T00:00:00.000Z",
+        metadata: { source: "rss", feedUrl: "https://example.com/feed.xml" },
+        category: "Tools & Launches",
+        relevanceScore: 0.4,
+        keep: true,
+        description: "RSS-sourced description long enough to pass the schema.",
+      };
       const r = renderIssue("2026-04-18", [
         makeScored("hn-42", {
           url: "https://example.com/story",
-          category: "Tools & Launches",
           relevanceScore: 0.5,
         }),
+        makeScored("hn-7", {
+          url: "https://example.com/seven",
+          relevanceScore: 0.45,
+        }),
+        rssItem,
       ]);
       expect(r.body).toContain(
         "### [Title hn-42](https://example.com/story) ([HN](https://news.ycombinator.com/item?id=42))",
       );
+      expect(r.body).toContain(
+        "### [Title hn-7](https://example.com/seven) ([HN](https://news.ycombinator.com/item?id=7))",
+      );
+      // RSS sibling header MUST remain unchanged.
+      expect(r.body).toContain(
+        "### [RSS sibling](https://example.com/rss-sibling)",
+      );
+      // And must not have gained a spurious HN suffix.
+      const rssHeaderLine = r.body
+        .split("\n")
+        .find((l) => l.includes("RSS sibling"));
+      expect(rssHeaderLine).toBeDefined();
+      expect(rssHeaderLine!).not.toContain("([HN]");
     });
 
     // AC-2: HN-source top pick H3 includes the HN link.
@@ -248,15 +278,51 @@ describe("renderIssue (C5)", () => {
       }
     });
 
-    // AC-5: Malformed HN id (no `hn-` prefix) renders safely with no suffix.
+    // AC-5: Malformed HN id renders safely with no suffix. Explicitly pins
+    // source:"hn" so the test proves the id-pattern branch (not the
+    // source-check short-circuit) is what rejected the suffix.
     it("AC-5: HN-source item with malformed id renders without HN link, no throw", () => {
-      // Source is `hn` but id does not match `^hn-(.+)$`. Per R5 the renderer
-      // degrades gracefully: no suffix, no throw, no malformed markdown.
-      const malformed = makeScored("news-xyz", {
+      const malformed: ScoredItem = {
+        id: "news-xyz", // violates ^hn-(.+)$
+        source: "hn",
+        title: "Malformed id",
         url: "https://example.com/malformed",
-      });
+        score: 1,
+        publishedAt: "2026-04-18T00:00:00.000Z",
+        metadata: { source: "hn" },
+        category: "Tools & Launches",
+        relevanceScore: 0.5,
+        keep: true,
+        description: "Synthetic item with an id that violates the HN id regex.",
+      };
       expect(() => renderIssue("2026-04-18", [malformed])).not.toThrow();
       const r = renderIssue("2026-04-18", [malformed]);
+      const headerLines = r.body
+        .split("\n")
+        .filter((line) => line.startsWith("### "));
+      for (const line of headerLines) {
+        expect(line).not.toContain("([HN]");
+      }
+    });
+
+    // Defensive: an objectID containing `)` or spaces would break markdown if
+    // interpolated raw. The restricted id regex rejects these, so they take
+    // the R5 fallback path (no suffix, no corruption).
+    it("rejects HN ids with unsafe chars (`)`, space) by falling through to R5", () => {
+      const bogus: ScoredItem = {
+        id: "hn-42)evil",
+        source: "hn",
+        title: "Attempted markdown injection",
+        url: "https://example.com/safe",
+        score: 1,
+        publishedAt: "2026-04-18T00:00:00.000Z",
+        metadata: { source: "hn" },
+        category: "Tools & Launches",
+        relevanceScore: 0.5,
+        keep: true,
+        description: "Synthetic item probing objectID sanitization.",
+      };
+      const r = renderIssue("2026-04-18", [bogus]);
       const headerLines = r.body
         .split("\n")
         .filter((line) => line.startsWith("### "));

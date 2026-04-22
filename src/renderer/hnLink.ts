@@ -8,12 +8,17 @@
 
 import type { ScoredItem } from "../types.js";
 
-const HN_ID_PATTERN = /^hn-(.+)$/;
-const HN_ITEM_URL_BASE = "https://news.ycombinator.com/item?id=";
+// Restricted to URL-safe chars only. HN Algolia objectIDs are numeric strings
+// in practice, but `z.string()` in the collector schema does not enforce that.
+// A `)` inside an unescaped objectID would terminate the markdown link
+// destination early and corrupt the rendered body. By allowing only
+// `[A-Za-z0-9_-]+` here, malformed ids fall through to R5's no-suffix path
+// rather than emitting broken markdown.
+const HN_ID_PATTERN = /^hn-([A-Za-z0-9_-]+)$/;
 
 export function hnThreadSuffix(item: ScoredItem): string {
   if (item.source !== "hn") return "";
   const match = HN_ID_PATTERN.exec(item.id);
   if (!match || !match[1]) return "";
-  return ` ([HN](${HN_ITEM_URL_BASE}${match[1]}))`;
+  return ` ([HN](https://news.ycombinator.com/item?id=${match[1]}))`;
 }
