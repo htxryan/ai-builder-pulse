@@ -10,6 +10,7 @@ import {
   ScoredItemSchema,
 } from "../types.js";
 import { CANONICAL_ARCHIVE_URL } from "../renderer/allowlist.js";
+import { hnThreadSuffix } from "../renderer/hnLink.js";
 import { sourceBadge } from "../renderer/sourceBadge.js";
 import { z } from "zod";
 
@@ -138,7 +139,7 @@ function renderItem(
   item: ScoredItem,
   appearedOnDays: number,
 ): string {
-  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})`;
+  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})${hnThreadSuffix(item)}`;
   const trendingSuffix =
     appearedOnDays >= 2 ? ` · trending this week (${appearedOnDays} days)` : "";
   const meta = `*${sourceBadge(item)}${trendingSuffix}*`;

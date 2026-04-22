@@ -27,6 +27,7 @@ import {
   CANONICAL_ARCHIVE_URL,
   CANONICAL_HOME_URL,
 } from "./allowlist.js";
+import { hnThreadSuffix } from "./hnLink.js";
 import { sourceBadge } from "./sourceBadge.js";
 
 export interface RenderedIssue {
@@ -87,7 +88,7 @@ function slugifyCategory(category: string): string {
 }
 
 function renderItem(item: ScoredItem): string {
-  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})`;
+  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})${hnThreadSuffix(item)}`;
   const meta = `*${sourceBadge(item)}*`;
   return `${header}\n${meta}\n\n${item.description}\n`;
 }
@@ -137,7 +138,7 @@ function renderTOC(groups: ReadonlyMap<Category, ScoredItem[]>): string {
 }
 
 function renderTopPick(item: ScoredItem): string {
-  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})`;
+  const header = `### [${escapeLinkLabel(item.title)}](${escapeLinkUrl(item.url)})${hnThreadSuffix(item)}`;
   const meta = `*${sourceBadge(item)}*`;
   return `## Today's Top Pick\n\n${header}\n${meta}\n\n${item.description}`;
 }

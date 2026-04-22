@@ -14,19 +14,19 @@ Today: 12 stories across 7 categories — top pick, "LangGraph 0.3 ships durable
 
 ## Today's Top Pick
 
-### [LangGraph 0.3 ships durable agent state](https://example.com/langgraph-0-3)
+### [LangGraph 0.3 ships durable agent state](https://example.com/langgraph-0-3) ([HN](https://news.ycombinator.com/item?id=top))
 *Hacker News · 452 points*
 
 LangGraph 0.3 introduces durable checkpointing so long-running agent workflows survive process restarts. Includes a new Postgres-backed state store.
 
 ## Tools & Launches
 
-### [LangGraph 0.3 ships durable agent state](https://example.com/langgraph-0-3)
+### [LangGraph 0.3 ships durable agent state](https://example.com/langgraph-0-3) ([HN](https://news.ycombinator.com/item?id=top))
 *Hacker News · 452 points*
 
 LangGraph 0.3 introduces durable checkpointing so long-running agent workflows survive process restarts. Includes a new Postgres-backed state store.
 
-### [A tiny CLI for testing Claude prompts locally](https://example.com/claude-cli)
+### [A tiny CLI for testing Claude prompts locally](https://example.com/claude-cli) ([HN](https://news.ycombinator.com/item?id=tool-2))
 *Hacker News · 214 points*
 
 Stream a prompt through multiple Claude models with a single command. Outputs JSON diffs for regression tracking.

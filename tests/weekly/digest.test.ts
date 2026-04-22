@@ -173,4 +173,47 @@ describe("buildWeeklyDigest", () => {
     expect(toolsIdx).toBeGreaterThanOrEqual(0);
     expect(newsIdx).toBeGreaterThan(toolsIdx);
   });
+
+  // AC-3: HN-source weekly items append ([HN](...)) suffix in item header.
+  it("AC-3: weekly digest item header for HN source appends ([HN](...)) link", () => {
+    const days = [
+      mkDay("2026-04-18", [
+        scored({ id: "hn-77", relevanceScore: 0.9 }),
+      ]),
+    ];
+    const digest = buildWeeklyDigest({
+      weekId: "2026-W16",
+      availableDays: days,
+      missingDays: [],
+    });
+    expect(digest.body).toContain(
+      "### [t-hn-77](https://example.com/hn-77) ([HN](https://news.ycombinator.com/item?id=77))",
+    );
+  });
+
+  // AC-4: Non-HN source headers in the weekly digest do NOT contain ([HN].
+  it("AC-4 (weekly): non-HN source header has no ([HN] parenthetical", () => {
+    const days = [
+      mkDay("2026-04-18", [
+        scored({
+          id: "rss-1",
+          source: "rss",
+          metadata: { source: "rss", feedUrl: "https://example.com/feed.xml" },
+          relevanceScore: 0.9,
+        }),
+      ]),
+    ];
+    const digest = buildWeeklyDigest({
+      weekId: "2026-W16",
+      availableDays: days,
+      missingDays: [],
+    });
+    const headerLines = digest.body
+      .split("\n")
+      .filter((line) => line.startsWith("### "));
+    expect(headerLines.length).toBeGreaterThan(0);
+    for (const line of headerLines) {
+      expect(line).not.toContain("([HN]");
+    }
+  });
 });

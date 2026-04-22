@@ -192,6 +192,93 @@ describe("renderIssue (C5)", () => {
     expect(matchesAny("https://pulse.ryanhenderson.dev.evil.com/x")).toBe(false);
   });
 
+  describe("HN thread link suffix (epic ai-builder-pulse-acr)", () => {
+    // AC-1: HN-source daily item headers include the parenthesized HN link.
+    it("AC-1: daily item header for HN source appends ([HN](news.ycombinator)) link", () => {
+      const r = renderIssue("2026-04-18", [
+        makeScored("hn-42", {
+          url: "https://example.com/story",
+          category: "Tools & Launches",
+          relevanceScore: 0.5,
+        }),
+      ]);
+      expect(r.body).toContain(
+        "### [Title hn-42](https://example.com/story) ([HN](https://news.ycombinator.com/item?id=42))",
+      );
+    });
+
+    // AC-2: HN-source top pick H3 includes the HN link.
+    it("AC-2: daily top pick for HN source appends ([HN](...)) link in the Top Pick block", () => {
+      const r = renderIssue("2026-04-18", [
+        makeScored("hn-99", {
+          url: "https://example.com/topstory",
+          relevanceScore: 0.95,
+        }),
+      ]);
+      const topPickIdx = r.body.indexOf("## Today's Top Pick");
+      expect(topPickIdx).toBeGreaterThan(-1);
+      const topPickBlock = r.body.slice(topPickIdx);
+      expect(topPickBlock).toContain(
+        "### [Title hn-99](https://example.com/topstory) ([HN](https://news.ycombinator.com/item?id=99))",
+      );
+    });
+
+    // AC-4: Non-HN source headers do NOT contain the `([HN]` parenthetical.
+    it("AC-4: non-HN source headers contain no ([HN] parenthetical (daily item + top pick)", () => {
+      const rssItem: ScoredItem = {
+        id: "rss-1",
+        source: "rss",
+        title: "RSS title",
+        url: "https://example.com/rss-item",
+        score: 1,
+        publishedAt: "2026-04-18T00:00:00.000Z",
+        metadata: { source: "rss", feedUrl: "https://example.com/feed.xml" },
+        category: "Tools & Launches",
+        relevanceScore: 0.95, // forces top-pick treatment too
+        keep: true,
+        description: "RSS-sourced description long enough to pass schema.",
+      };
+      const r = renderIssue("2026-04-18", [rssItem]);
+      const headerLines = r.body
+        .split("\n")
+        .filter((line) => line.startsWith("### "));
+      expect(headerLines.length).toBeGreaterThan(0);
+      for (const line of headerLines) {
+        expect(line).not.toContain("([HN]");
+      }
+    });
+
+    // AC-5: Malformed HN id (no `hn-` prefix) renders safely with no suffix.
+    it("AC-5: HN-source item with malformed id renders without HN link, no throw", () => {
+      // Source is `hn` but id does not match `^hn-(.+)$`. Per R5 the renderer
+      // degrades gracefully: no suffix, no throw, no malformed markdown.
+      const malformed = makeScored("news-xyz", {
+        url: "https://example.com/malformed",
+      });
+      expect(() => renderIssue("2026-04-18", [malformed])).not.toThrow();
+      const r = renderIssue("2026-04-18", [malformed]);
+      const headerLines = r.body
+        .split("\n")
+        .filter((line) => line.startsWith("### "));
+      for (const line of headerLines) {
+        expect(line).not.toContain("([HN]");
+      }
+    });
+
+    // Boundary S6: title brackets + url paren still escape correctly AND suffix is present.
+    it("S6: HN item with bracketed title and paren URL still escapes correctly alongside the HN suffix", () => {
+      const r = renderIssue("2026-04-18", [
+        makeScored("hn-7", {
+          title: "React [beta]",
+          url: "https://en.wikipedia.org/wiki/Foo_(bar)",
+        }),
+      ]);
+      expect(r.body).toContain(
+        "### [React \\[beta\\]](https://en.wikipedia.org/wiki/Foo_(bar%29) ([HN](https://news.ycombinator.com/item?id=7))",
+      );
+    });
+  });
+
   it("Un-01: canonical pulse.ryanhenderson.dev URL in rendered body passes link-integrity (AC-12)", () => {
     // The renderer emits the canonical home + archive URLs in its footer.
     // Verify the end-to-end rendered body passes verifyLinkIntegrity with the
