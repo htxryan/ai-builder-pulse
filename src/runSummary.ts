@@ -12,6 +12,7 @@ import type { WeeklyResult, WeeklyStageTimings } from "./weekly/index.js";
 import type { Source, SourceSummary } from "./types.js";
 import type { BackfillResult } from "./backfill.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
+import type { PreFilterStats } from "./preFilter/index.js";
 
 const STAGE_ORDER: readonly (keyof StageTimings)[] = [
   "collect",
@@ -110,6 +111,25 @@ function renderPerSourceCostRows(m: CuratorMetrics): string {
   return rows.join("\n") + "\n";
 }
 
+function renderPreFilterRows(stats: PreFilterStats | undefined): string {
+  if (!stats) {
+    return "_(pre-filter did not run — collection skipped or failed early)_\n";
+  }
+  const rows: string[] = [];
+  rows.push("| Metric | Value |");
+  rows.push("|---|--:|");
+  rows.push(`| inputCount | ${stats.inputCount} |`);
+  rows.push(`| freshnessDropped | ${stats.freshnessDropped} |`);
+  rows.push(`| invalidDateDropped | ${stats.invalidDateDropped} |`);
+  rows.push(`| futureDropped | ${stats.futureDropped} |`);
+  rows.push(`| shapeDropped | ${stats.shapeDropped} |`);
+  rows.push(`| duplicateDropped | ${stats.duplicateDropped} |`);
+  rows.push(`| normFailDropped | ${stats.normFailDropped} |`);
+  rows.push(`| hnPatternDropped | ${stats.hnPatternDropped} |`);
+  rows.push(`| outputCount | ${stats.outputCount} |`);
+  return rows.join("\n") + "\n";
+}
+
 function renderBackfillRows(bf: BackfillResult | undefined): string {
   if (!bf || bf.attempted === 0) {
     return "_(no prior-day orphans detected)_\n";
@@ -191,6 +211,9 @@ export function renderOrchestratorSummary(r: OrchestratorResult): string {
   lines.push("### Sources");
   lines.push("");
   lines.push(renderSourceRows(r.summary));
+  lines.push("### Pre-filter");
+  lines.push("");
+  lines.push(renderPreFilterRows(r.preFilterStats));
   lines.push("### E-06 Backfill");
   lines.push("");
   lines.push(renderBackfillRows(r.backfill));

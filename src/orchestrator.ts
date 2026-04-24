@@ -19,7 +19,11 @@ import type { CuratorMetrics } from "./curator/mockCurator.js";
 import { bindRunId, log, makeRunId, registerSecretsFromEnv } from "./log.js";
 import { parsePositiveInt } from "./env.js";
 import { runBackfill, type BackfillResult } from "./backfill.js";
-import { applyPreFilter, uniqueSources } from "./preFilter/index.js";
+import {
+  applyPreFilter,
+  uniqueSources,
+  type PreFilterStats,
+} from "./preFilter/index.js";
 import { renderIssue, type RenderedIssue } from "./renderer/index.js";
 import {
   publishToButtondown,
@@ -117,6 +121,10 @@ export interface OrchestratorResult {
   // Populated when AC7 archives fallback was invoked (i.e. a day that would
   // otherwise have been silent re-published a prior day's top items).
   archivesFallback?: ArchivesFallbackResult;
+  // E3 pre-filter counters. Populated whenever the run progressed past
+  // collection (i.e. applyPreFilter was invoked). Surfaced in the GHA job
+  // summary so operators can see how many items were dropped at each gate.
+  preFilterStats?: PreFilterStats | undefined;
 }
 
 const DEFAULT_MIN_ITEMS = 5;
@@ -215,6 +223,9 @@ async function runOrchestratorInner(
   // (missing-api-key fail-fast) still surface an explicit zeroed backfill in
   // the run summary rather than an ambiguous `undefined`.
   let backfillResult: BackfillResult | undefined;
+  // Captured once `applyPreFilter` runs; attached to every subsequent done()
+  // result so the GHA summary can report drop counts even on skip paths.
+  let preFilterStats: PreFilterStats | undefined;
   const done = (result: Omit<OrchestratorResult, "runId" | "timings">): OrchestratorResult => {
     timings.totalMs = Date.now() - t0;
     // Backfill is orthogonal to every skip/fail status — always attach it so
@@ -226,6 +237,7 @@ async function runOrchestratorInner(
       runId,
       timings,
       backfill: result.backfill ?? backfillResult,
+      preFilterStats: result.preFilterStats ?? preFilterStats,
     };
   };
   const ctx: RunContext = {
@@ -332,8 +344,9 @@ async function runOrchestratorInner(
   // S-05 so the floor reflects sources that contribute *usable* items, not
   // just sources that returned without erroring.
   const preFiltered = await stage("preFilter", async () =>
-    applyPreFilter(items, runDate, summary),
+    applyPreFilter(items, runDate, summary, { env }),
   );
+  preFilterStats = preFiltered.stats;
   log.info("pre-filter complete", {
     inputCount: preFiltered.stats.inputCount,
     freshnessDropped: preFiltered.stats.freshnessDropped,
@@ -342,6 +355,7 @@ async function runOrchestratorInner(
     shapeDropped: preFiltered.stats.shapeDropped,
     duplicateDropped: preFiltered.stats.duplicateDropped,
     normFailDropped: preFiltered.stats.normFailDropped,
+    hnPatternDropped: preFiltered.stats.hnPatternDropped,
     outputCount: preFiltered.stats.outputCount,
   });
   const filteredItems = preFiltered.items;

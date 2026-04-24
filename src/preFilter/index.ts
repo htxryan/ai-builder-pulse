@@ -3,6 +3,7 @@ import type { RawItem, Source, SourceSummary } from "../types.js";
 import { freshnessVerdict } from "./freshness.js";
 import { validateUrlShape } from "./urlShape.js";
 import { dedupByUrl } from "./dedup.js";
+import { matchesHnDropPattern } from "./hnPatternFilter.js";
 
 export { normalizeUrl } from "./url.js";
 export { isFresh, freshnessCutoffMs, freshnessVerdict } from "./freshness.js";
@@ -11,6 +12,10 @@ export { validateUrlShape } from "./urlShape.js";
 export type { UrlShapeRejectReason, UrlShapeResult } from "./urlShape.js";
 export { dedupByUrl } from "./dedup.js";
 export type { DedupResult } from "./dedup.js";
+export {
+  HARDCODED_HN_DROP_PATTERNS,
+  matchesHnDropPattern,
+} from "./hnPatternFilter.js";
 
 export interface PreFilterStats {
   readonly inputCount: number;
@@ -20,12 +25,14 @@ export interface PreFilterStats {
   readonly shapeDropped: number;
   readonly duplicateDropped: number;
   readonly normFailDropped: number;
+  readonly hnPatternDropped: number;
   readonly outputCount: number;
 }
 
 export interface PreFilterOptions {
   readonly freshnessHours?: number;
   readonly now?: Date;
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 export interface PreFilterResult {
@@ -93,9 +100,27 @@ export function applyPreFilter(
     }
   }
 
-  const { kept, removed, normFailed } = dedupByUrl(shapeOk);
+  const { kept: dedupKept, removed, normFailed } = dedupByUrl(shapeOk);
   const duplicateDropped = removed.length;
   const normFailDropped = normFailed.length;
+
+  // HN megathread filter — runs AFTER dedup so duplicates are not double-
+  // counted under hnPatternDropped. Only HN-source items are considered.
+  const env = opts.env ?? process.env;
+  const kept: RawItem[] = [];
+  let hnPatternDropped = 0;
+  for (const item of dedupKept) {
+    if (matchesHnDropPattern(item, env)) {
+      hnPatternDropped += 1;
+      log.warn("pre-filter dropped HN megathread by title pattern", {
+        id: item.id,
+        source: item.source,
+        title: item.title,
+      });
+    } else {
+      kept.push(item);
+    }
+  }
 
   const stats: PreFilterStats = {
     inputCount: items.length,
@@ -105,6 +130,7 @@ export function applyPreFilter(
     shapeDropped,
     duplicateDropped,
     normFailDropped,
+    hnPatternDropped,
     outputCount: kept.length,
   };
 

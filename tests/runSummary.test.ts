@@ -248,6 +248,41 @@ describe("renderOrchestratorSummary", () => {
     expect(md).toContain("| skippedOverCap | 2 |");
     expect(md).toContain("2026-04-15");
   });
+
+  it("renders Pre-filter section with hnPatternDropped (AC-5)", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "published",
+        summary: sampleSummary(),
+        preFilterStats: {
+          inputCount: 220,
+          freshnessDropped: 5,
+          invalidDateDropped: 0,
+          futureDropped: 0,
+          shapeDropped: 4,
+          duplicateDropped: 7,
+          normFailDropped: 0,
+          hnPatternDropped: 3,
+          outputCount: 201,
+        },
+      }),
+    );
+    expect(md).toContain("### Pre-filter");
+    expect(md).toContain("| hnPatternDropped | 3 |");
+    expect(md).toContain("| inputCount | 220 |");
+    expect(md).toContain("| outputCount | 201 |");
+  });
+
+  it("Pre-filter section gracefully handles missing stats", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "failed",
+        reason: "fetch_failed",
+      }),
+    );
+    expect(md).toContain("### Pre-filter");
+    expect(md).toContain("pre-filter did not run");
+  });
 });
 
 describe("renderRemoteSkipSummary", () => {
