@@ -35,8 +35,11 @@ const PATTERNS = [/\bas unknown\b/, /@ts-ignore\b/, /@ts-nocheck\b/];
 //   3-4. Two `as unknown as InteropZodObject` on the M4 tool schemas
 //      (fetchUrlStatus, readRawItem) — same root cause as #2. The `tool()`
 //      factory's schema parameter resolves to the same `ZodV3Like` bound.
+//   5. `as unknown as HaikuMessagesParseFn` in haiku/haikuClient.ts — same
+//      root cause as #1; the Haiku stage uses the same SDK-generic ↔
+//      narrow-adapter pattern as the curator client.
 // Any additional occurrence fails CI.
-const BASELINE = 4;
+const BASELINE = 5;
 
 function walk(dir) {
   const out = [];
