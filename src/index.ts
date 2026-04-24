@@ -73,6 +73,12 @@ async function main(): Promise<void> {
       status: result.status,
       reason: result.reason,
       totalMs: result.timings.totalMs,
+      // Haiku savings outcome on a single line so operators can grep one
+      // entry per run without piecing together the per-stage logs.
+      haikuInput: result.haikuStats?.inputCount,
+      haikuKept: result.haikuStats?.keptCount,
+      haikuDropped: result.haikuStats?.droppedCount,
+      haikuEstimatedUsd: result.haikuStats?.estimatedUsd,
     });
     // `published_archive_failed` means Buttondown accepted the email but the
     // archive write did not complete. The commit step would otherwise push a

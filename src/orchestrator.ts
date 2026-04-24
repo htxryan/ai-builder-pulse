@@ -16,6 +16,12 @@ import { verifyLinkIntegrity } from "./curator/linkIntegrity.js";
 import { sanitizeDescriptions } from "./curator/sanitizeDescriptions.js";
 import { writeSkippedItemsJson } from "./curator/deadletter.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
+import {
+  applyHaikuPreFilter,
+  type HaikuClient,
+  type HaikuPreFilterStats,
+} from "./haiku/index.js";
+import { writeHaikuStatsJson } from "./haiku/archive.js";
 import { bindRunId, log, makeRunId, registerSecretsFromEnv } from "./log.js";
 import { parsePositiveInt } from "./env.js";
 import { runBackfill, type BackfillResult } from "./backfill.js";
@@ -58,6 +64,10 @@ export interface OrchestratorOptions {
     summary: SourceSummary;
   }>;
   env?: NodeJS.ProcessEnv;
+  // Optional Haiku pre-filter client. Tests inject a deterministic stub.
+  // Production constructs `AnthropicHaikuClient` lazily inside the stage
+  // (gated by HAIKU_PREFILTER_DISABLED + ANTHROPIC_API_KEY presence).
+  haikuClient?: HaikuClient;
 }
 
 /** Terminal status of a daily orchestrator run — drives CI exit code + job summary. */
@@ -79,6 +89,7 @@ export type OrchestratorStatus =
 export interface StageTimings {
   collect?: number;
   preFilter?: number;
+  haikuPreFilter?: number;
   curate?: number;
   linkIntegrity?: number;
   render?: number;
@@ -125,6 +136,12 @@ export interface OrchestratorResult {
   // collection (i.e. applyPreFilter was invoked). Surfaced in the GHA job
   // summary so operators can see how many items were dropped at each gate.
   preFilterStats?: PreFilterStats | undefined;
+  // Haiku pre-filter stats (ai-builder-pulse-9li R17 + OQ2). Populated
+  // whenever the Haiku stage executed — including the DISABLED short-circuit
+  // and stage-level fallback paths, since the stage always returns a result.
+  // Note: Haiku cost is INDEPENDENT from `curatorMetrics.estimatedUsd` — they
+  // do NOT sum against `CURATOR_MAX_USD` (R18).
+  haikuStats?: HaikuPreFilterStats | undefined;
 }
 
 const DEFAULT_MIN_ITEMS = 5;
@@ -226,6 +243,9 @@ async function runOrchestratorInner(
   // Captured once `applyPreFilter` runs; attached to every subsequent done()
   // result so the GHA summary can report drop counts even on skip paths.
   let preFilterStats: PreFilterStats | undefined;
+  // Captured once `applyHaikuPreFilter` runs; attached to every done()
+  // result so the GHA summary + run log show Haiku savings on every status.
+  let haikuStats: HaikuPreFilterStats | undefined;
   const done = (result: Omit<OrchestratorResult, "runId" | "timings">): OrchestratorResult => {
     timings.totalMs = Date.now() - t0;
     // Backfill is orthogonal to every skip/fail status — always attach it so
@@ -238,6 +258,7 @@ async function runOrchestratorInner(
       timings,
       backfill: result.backfill ?? backfillResult,
       preFilterStats: result.preFilterStats ?? preFilterStats,
+      haikuStats: result.haikuStats ?? haikuStats,
     };
   };
   const ctx: RunContext = {
@@ -397,6 +418,24 @@ async function runOrchestratorInner(
     });
   }
 
+  // Haiku pre-filter (ai-builder-pulse-9li R05). Sits between the S-05
+  // source-floor check and the (expensive) Sonnet curator. Always returns a
+  // result — DISABLED short-circuit, chunk-level fallback, and stage-level
+  // throw all surface as `skipped=true` or pass-through with kept items
+  // unchanged. Cost is tracked but does NOT count against CURATOR_MAX_USD.
+  const haikuClient = resolveHaikuClient(opts.haikuClient, env);
+  const haikuResult = await stage("haikuPreFilter", () =>
+    applyHaikuPreFilter(filteredItems, {
+      env,
+      ...(haikuClient ? { client: haikuClient } : {}),
+    }),
+  );
+  haikuStats = haikuResult.stats;
+  // Copy to a mutable array so the existing `Curator.curate(items: RawItem[])`
+  // signature accepts it. The Haiku result hands back a `readonly` slice; the
+  // curator never mutates its input but the type is wider for legacy reasons.
+  const curatorInputItems: RawItem[] = haikuResult.kept.slice();
+
   // Curate — env-selectable. Backends routed by `selectCurator` in
   // `src/curator/index.ts`:
   //   CURATOR=mock (default)                        → MockCurator (E1)
@@ -422,7 +461,7 @@ async function runOrchestratorInner(
   }
   let scored: ScoredItem[];
   try {
-    scored = await stage("curate", () => curator.curate(filteredItems));
+    scored = await stage("curate", () => curator.curate(curatorInputItems));
   } catch (err) {
     if (err instanceof CostCeilingError) {
       log.error("curator cost ceiling exceeded", {
@@ -483,11 +522,13 @@ async function runOrchestratorInner(
     });
   }
 
-  // E-05 defensive re-check: scored + skipped must fully cover the input.
-  // A curator that drops items outside the deadletter path is a regression.
-  if (scored.length + skippedItems.length !== filteredItems.length) {
+  // E-05 defensive re-check: scored + skipped must fully cover the curator's
+  // input set (which is the Haiku-kept subset, NOT the heuristic pre-filter
+  // output). A curator that drops items outside the deadletter path is a
+  // regression.
+  if (scored.length + skippedItems.length !== curatorInputItems.length) {
     log.error("curator count mismatch (E-05)", {
-      expected: filteredItems.length,
+      expected: curatorInputItems.length,
       scored: scored.length,
       skipped: skippedItems.length,
     });
@@ -686,6 +727,15 @@ async function runOrchestratorInner(
     });
   }
 
+  // Persist Haiku stats alongside the archive (OQ2). Skipped stages MUST
+  // NOT write the file — operators rely on its presence/absence to tell
+  // "Haiku ran" from "Haiku was bypassed". Best-effort: a write failure
+  // logs a warning but does NOT fail the run (mirrors the deadletter
+  // semantics — audit trail, not gated correctness).
+  if (!haikuResult.skipped) {
+    writeHaikuStatsJson(repoRoot, runDate, haikuResult.stats);
+  }
+
   return done({
     runDate,
     status: archiveOk ? "published" : "published_archive_failed",
@@ -728,6 +778,34 @@ async function maybeRunArchivesFallback(
       reason: "threw",
     };
   }
+}
+
+/**
+ * Build the Haiku client the stage will use, or return `undefined` to let
+ * `applyHaikuPreFilter` use its own default (which itself short-circuits
+ * when DISABLED before construction). We pre-empt construction at the
+ * orchestrator level when:
+ *   - the caller injected one (tests),
+ *   - HAIKU_PREFILTER_DISABLED=1 is set (returning undefined and letting
+ *     the stage's own DISABLED branch fire — no API key needed),
+ *   - ANTHROPIC_API_KEY is missing (return undefined; the stage will throw
+ *     on construction inside its try/catch and fall back to skipped=true).
+ *
+ * Construction errors at this layer are caught and logged; the stage
+ * itself is observably non-fatal even if we hand it `undefined` and it
+ * has to try-and-fail to build the default client.
+ */
+function resolveHaikuClient(
+  injected: HaikuClient | undefined,
+  env: NodeJS.ProcessEnv,
+): HaikuClient | undefined {
+  if (injected !== undefined) return injected;
+  if (env["HAIKU_PREFILTER_DISABLED"] === "1") return undefined;
+  if (!env["ANTHROPIC_API_KEY"]) return undefined;
+  // Default-client construction is also handled inside applyHaikuPreFilter;
+  // returning undefined here lets the stage build its own (and means the
+  // env-driven model resolution lives in one place).
+  return undefined;
 }
 
 function defaultButtondownPublisher(env: NodeJS.ProcessEnv): Publisher {

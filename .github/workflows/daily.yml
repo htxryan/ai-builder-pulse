@@ -92,6 +92,12 @@ jobs:
           ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
           CURATOR_MODEL_OVERRIDE: ${{ vars.CURATOR_MODEL_OVERRIDE }}
           CURATOR_MAX_USD: ${{ vars.CURATOR_MAX_USD }}
+          # ai-builder-pulse-9li: Haiku pre-filter wiring. The model override
+          # routes claude-haiku-4-5 through OpenRouter when set; the DISABLED
+          # repo var is the kill switch that bypasses the stage entirely
+          # (curator sees the full heuristic pre-filter output).
+          HAIKU_MODEL_OVERRIDE: ${{ vars.HAIKU_MODEL_OVERRIDE }}
+          HAIKU_PREFILTER_DISABLED: ${{ vars.HAIKU_PREFILTER_DISABLED }}
           BUTTONDOWN_API_KEY: ${{ secrets.BUTTONDOWN_API_KEY }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
