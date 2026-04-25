@@ -13,10 +13,12 @@ import type { Source, SourceSummary } from "./types.js";
 import type { BackfillResult } from "./backfill.js";
 import type { CuratorMetrics } from "./curator/mockCurator.js";
 import type { PreFilterStats } from "./preFilter/index.js";
+import type { HaikuPreFilterStats } from "./haiku/index.js";
 
 const STAGE_ORDER: readonly (keyof StageTimings)[] = [
   "collect",
   "preFilter",
+  "haikuPreFilter",
   "curate",
   "linkIntegrity",
   "render",
@@ -130,6 +132,37 @@ function renderPreFilterRows(stats: PreFilterStats | undefined): string {
   return rows.join("\n") + "\n";
 }
 
+function renderHaikuRows(stats: HaikuPreFilterStats | undefined): string {
+  if (!stats) {
+    return "_(haiku pre-filter did not run — collection skipped or failed early)_\n";
+  }
+  if (stats.skipped) {
+    // DISABLED short-circuit or stage-level fallback. Emit the counts (all
+    // items pass through) but flag skipped so an operator can tell at a
+    // glance the savings line is zero by design, not by accident.
+    const rows: string[] = [];
+    rows.push("| Metric | Value |");
+    rows.push("|---|--:|");
+    rows.push(`| inputCount | ${stats.inputCount} |`);
+    rows.push(`| keptCount | ${stats.keptCount} |`);
+    rows.push(`| droppedCount | ${stats.droppedCount} |`);
+    rows.push(`| chunkCount | ${stats.chunkCount} |`);
+    rows.push(`| estimatedUsd | ${fmtUsd(stats.estimatedUsd)} |`);
+    rows.push(`| skipped | true |`);
+    return rows.join("\n") + "\n";
+  }
+  const rows: string[] = [];
+  rows.push("| Metric | Value |");
+  rows.push("|---|--:|");
+  rows.push(`| inputCount | ${stats.inputCount} |`);
+  rows.push(`| keptCount | ${stats.keptCount} |`);
+  rows.push(`| droppedCount | ${stats.droppedCount} |`);
+  rows.push(`| chunkCount | ${stats.chunkCount} |`);
+  rows.push(`| estimatedUsd | ${fmtUsd(stats.estimatedUsd)} |`);
+  rows.push(`| skipped | false |`);
+  return rows.join("\n") + "\n";
+}
+
 function renderBackfillRows(bf: BackfillResult | undefined): string {
   if (!bf || bf.attempted === 0) {
     return "_(no prior-day orphans detected)_\n";
@@ -214,6 +247,9 @@ export function renderOrchestratorSummary(r: OrchestratorResult): string {
   lines.push("### Pre-filter");
   lines.push("");
   lines.push(renderPreFilterRows(r.preFilterStats));
+  lines.push("### Haiku pre-filter");
+  lines.push("");
+  lines.push(renderHaikuRows(r.haikuStats));
   lines.push("### E-06 Backfill");
   lines.push("");
   lines.push(renderBackfillRows(r.backfill));

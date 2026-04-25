@@ -423,11 +423,12 @@ async function runOrchestratorInner(
   // result — DISABLED short-circuit, chunk-level fallback, and stage-level
   // throw all surface as `skipped=true` or pass-through with kept items
   // unchanged. Cost is tracked but does NOT count against CURATOR_MAX_USD.
-  const haikuClient = resolveHaikuClient(opts.haikuClient, env);
+  // The stage builds its own default client when none is injected; tests
+  // pass `opts.haikuClient` to inject a deterministic stub.
   const haikuResult = await stage("haikuPreFilter", () =>
     applyHaikuPreFilter(filteredItems, {
       env,
-      ...(haikuClient ? { client: haikuClient } : {}),
+      ...(opts.haikuClient ? { client: opts.haikuClient } : {}),
     }),
   );
   haikuStats = haikuResult.stats;
@@ -778,34 +779,6 @@ async function maybeRunArchivesFallback(
       reason: "threw",
     };
   }
-}
-
-/**
- * Build the Haiku client the stage will use, or return `undefined` to let
- * `applyHaikuPreFilter` use its own default (which itself short-circuits
- * when DISABLED before construction). We pre-empt construction at the
- * orchestrator level when:
- *   - the caller injected one (tests),
- *   - HAIKU_PREFILTER_DISABLED=1 is set (returning undefined and letting
- *     the stage's own DISABLED branch fire — no API key needed),
- *   - ANTHROPIC_API_KEY is missing (return undefined; the stage will throw
- *     on construction inside its try/catch and fall back to skipped=true).
- *
- * Construction errors at this layer are caught and logged; the stage
- * itself is observably non-fatal even if we hand it `undefined` and it
- * has to try-and-fail to build the default client.
- */
-function resolveHaikuClient(
-  injected: HaikuClient | undefined,
-  env: NodeJS.ProcessEnv,
-): HaikuClient | undefined {
-  if (injected !== undefined) return injected;
-  if (env["HAIKU_PREFILTER_DISABLED"] === "1") return undefined;
-  if (!env["ANTHROPIC_API_KEY"]) return undefined;
-  // Default-client construction is also handled inside applyHaikuPreFilter;
-  // returning undefined here lets the stage build its own (and means the
-  // env-driven model resolution lives in one place).
-  return undefined;
 }
 
 function defaultButtondownPublisher(env: NodeJS.ProcessEnv): Publisher {

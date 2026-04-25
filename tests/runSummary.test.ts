@@ -283,6 +283,62 @@ describe("renderOrchestratorSummary", () => {
     expect(md).toContain("### Pre-filter");
     expect(md).toContain("pre-filter did not run");
   });
+
+  it("renders Haiku pre-filter section with valid stats", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "published",
+        summary: sampleSummary(),
+        haikuStats: {
+          inputCount: 200,
+          keptCount: 75,
+          droppedCount: 125,
+          chunkCount: 2,
+          estimatedUsd: 0.0123,
+          skipped: false,
+        },
+      }),
+    );
+    expect(md).toContain("### Haiku pre-filter");
+    expect(md).toContain("| inputCount | 200 |");
+    expect(md).toContain("| keptCount | 75 |");
+    expect(md).toContain("| droppedCount | 125 |");
+    expect(md).toContain("| chunkCount | 2 |");
+    expect(md).toContain("| estimatedUsd | $0.0123 |");
+    expect(md).toContain("| skipped | false |");
+  });
+
+  it("Haiku pre-filter section renders 'did not run' when haikuStats is undefined", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "failed",
+        reason: "fetch_failed",
+      }),
+    );
+    expect(md).toContain("### Haiku pre-filter");
+    expect(md).toContain("haiku pre-filter did not run");
+  });
+
+  it("Haiku pre-filter section flags skipped=true when stage was bypassed", () => {
+    const md = renderOrchestratorSummary(
+      baseResult({
+        status: "published",
+        summary: sampleSummary(),
+        haikuStats: {
+          inputCount: 30,
+          keptCount: 30,
+          droppedCount: 0,
+          chunkCount: 0,
+          estimatedUsd: 0,
+          skipped: true,
+        },
+      }),
+    );
+    expect(md).toContain("### Haiku pre-filter");
+    expect(md).toContain("| inputCount | 30 |");
+    expect(md).toContain("| keptCount | 30 |");
+    expect(md).toContain("| skipped | true |");
+  });
 });
 
 describe("renderRemoteSkipSummary", () => {

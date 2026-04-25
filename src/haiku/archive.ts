@@ -30,6 +30,7 @@ interface HaikuStatsPayload {
   readonly droppedCount: number;
   readonly chunkCount: number;
   readonly estimatedUsd: number;
+  readonly skipped: boolean;
 }
 
 /**
@@ -51,6 +52,7 @@ export function writeHaikuStatsJson(
       droppedCount: stats.droppedCount,
       chunkCount: stats.chunkCount,
       estimatedUsd: stats.estimatedUsd,
+      skipped: stats.skipped,
     };
     writeFileAtomic(
       haikuStatsPath(repoRoot, runDate),

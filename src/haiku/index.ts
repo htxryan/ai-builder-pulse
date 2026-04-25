@@ -18,6 +18,7 @@ import { log } from "../log.js";
 import type { RawItem } from "../types.js";
 import {
   buildDefaultHaikuClient,
+  DEFAULT_HAIKU_MAX_TOKENS,
   type HaikuCallArgs,
   type HaikuCallResult,
   type HaikuClient,
@@ -37,7 +38,6 @@ export { HAIKU_MODEL_PIN, resolveHaikuModel } from "./prompt.js";
 
 const DEFAULT_CHUNK_THRESHOLD = 100;
 const DEFAULT_CONCURRENCY = 3;
-const DEFAULT_MAX_TOKENS = 4_000;
 
 export interface HaikuPreFilterStats {
   readonly inputCount: number;
@@ -45,6 +45,12 @@ export interface HaikuPreFilterStats {
   readonly droppedCount: number;
   readonly chunkCount: number;
   readonly estimatedUsd: number;
+  /**
+   * True iff the stage was bypassed (DISABLED env var or stage-level throw).
+   * Mirrors `HaikuPreFilterResult.skipped`; carried on stats so downstream
+   * consumers (job summary, archive) don't need to plumb the full result.
+   */
+  readonly skipped: boolean;
 }
 
 export interface HaikuPreFilterResult {
@@ -165,7 +171,7 @@ export async function applyHaikuPreFilter(
         try {
           const callResult = await client.call({
             model,
-            maxTokens: DEFAULT_MAX_TOKENS,
+            maxTokens: DEFAULT_HAIKU_MAX_TOKENS,
             systemPrompt: HAIKU_SYSTEM_PROMPT,
             rawItems: chunk,
           });
@@ -235,6 +241,7 @@ export async function applyHaikuPreFilter(
       droppedCount: dropped.length,
       chunkCount: chunks.length,
       estimatedUsd,
+      skipped: false,
     };
 
     log.info("haiku-prefilter complete", {
@@ -282,6 +289,7 @@ function passThrough(
       droppedCount: 0,
       chunkCount: opts.chunkCount,
       estimatedUsd: 0,
+      skipped: opts.skipped,
     },
     skipped: opts.skipped,
   };
