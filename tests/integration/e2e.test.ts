@@ -224,5 +224,10 @@ describe("E7 E2E fixture pipeline run", () => {
       );
       lastIdx = idx;
     }
+
+    // AC-10: "pre-filter complete" log line carries the engagementFloorDropped field.
+    const preFilterLine = logs.find((l) => l.includes("pre-filter complete"));
+    expect(preFilterLine).toBeDefined();
+    expect(preFilterLine).toContain("engagementFloorDropped");
   });
 });

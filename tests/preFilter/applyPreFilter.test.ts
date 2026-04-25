@@ -17,7 +17,7 @@ function hn(
     url,
     score,
     publishedAt,
-    metadata: { source: "hn" },
+    metadata: { source: "hn", points: 5, numComments: 2 },
   };
 }
 

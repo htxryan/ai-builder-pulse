@@ -16,11 +16,16 @@ function item(
 ): RawItem {
   const meta =
     source === "hn"
-      ? { source: "hn" as const }
+      ? { source: "hn" as const, points: 5, numComments: 2 }
       : source === "github-trending"
         ? { source: "github-trending" as const, repoFullName: "x/y" }
         : source === "reddit"
-          ? { source: "reddit" as const, subreddit: "MachineLearning" }
+          ? {
+              source: "reddit" as const,
+              subreddit: "MachineLearning",
+              upvotes: 5,
+              numComments: 2,
+            }
           : source === "rss"
             ? { source: "rss" as const, feedUrl: "https://example.com/feed" }
             : { source: "twitter" as const, handle: "x" };
@@ -231,6 +236,7 @@ describe("applyPreFilter integration with HN pattern filter", () => {
       duplicateDropped: expect.any(Number),
       normFailDropped: expect.any(Number),
       hnPatternDropped: expect.any(Number),
+      engagementFloorDropped: expect.any(Number),
       outputCount: expect.any(Number),
     });
   });

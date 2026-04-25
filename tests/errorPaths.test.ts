@@ -48,7 +48,7 @@ describe("E-04 error path (AC-7)", () => {
             url: "https://example.com/x",
             score: 1,
             publishedAt: "2026-04-18T00:00:00.000Z",
-            metadata: { source: "hn" as const },
+            metadata: { source: "hn" as const, points: 5, numComments: 2 },
           },
         ],
         summary: { hn: { count: 1, status: "ok" } },

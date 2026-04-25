@@ -377,6 +377,7 @@ async function runOrchestratorInner(
     duplicateDropped: preFiltered.stats.duplicateDropped,
     normFailDropped: preFiltered.stats.normFailDropped,
     hnPatternDropped: preFiltered.stats.hnPatternDropped,
+    engagementFloorDropped: preFiltered.stats.engagementFloorDropped,
     outputCount: preFiltered.stats.outputCount,
   });
   const filteredItems = preFiltered.items;

@@ -114,7 +114,7 @@ describe("runOrchestrator", () => {
             url: "https://example.com/1",
             score: 1,
             publishedAt: "2026-04-18T01:00:00.000Z",
-            metadata: { source: "hn" as const },
+            metadata: { source: "hn" as const, points: 5, numComments: 2 },
           },
         ],
         summary: { hn: { count: 1, status: "ok" } } as SourceSummary,
@@ -165,7 +165,7 @@ describe("runOrchestrator", () => {
             url: "https://example.com/post-1",
             score: 1,
             publishedAt: "2026-04-18T01:00:00.000Z",
-            metadata: { source: "hn" as const },
+            metadata: { source: "hn" as const, points: 5, numComments: 2 },
           },
           {
             id: "gh-bad",
@@ -206,7 +206,7 @@ describe("runOrchestrator", () => {
             url: "https://example.com/post-1?utm_source=hn",
             score: 1,
             publishedAt: "2026-04-18T01:00:00.000Z",
-            metadata: { source: "hn" as const },
+            metadata: { source: "hn" as const, points: 5, numComments: 2 },
           },
           {
             id: "hn-dup2",
@@ -215,7 +215,7 @@ describe("runOrchestrator", () => {
             url: "https://example.com/post-1?utm_medium=link",
             score: 1,
             publishedAt: "2026-04-18T01:00:00.000Z",
-            metadata: { source: "hn" as const },
+            metadata: { source: "hn" as const, points: 5, numComments: 2 },
           },
           {
             id: "gh-other",

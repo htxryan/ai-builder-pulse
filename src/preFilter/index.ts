@@ -4,6 +4,11 @@ import { freshnessVerdict } from "./freshness.js";
 import { validateUrlShape } from "./urlShape.js";
 import { dedupByUrl } from "./dedup.js";
 import { matchesHnDropPattern } from "./hnPatternFilter.js";
+import {
+  engagementValues,
+  matchesEngagementFloorDrop,
+  resolveEngagementThresholds,
+} from "./engagementFloor.js";
 
 export { normalizeUrl } from "./url.js";
 export { isFresh, freshnessCutoffMs, freshnessVerdict } from "./freshness.js";
@@ -16,6 +21,16 @@ export {
   HARDCODED_HN_DROP_PATTERNS,
   matchesHnDropPattern,
 } from "./hnPatternFilter.js";
+export {
+  ENGAGEMENT_FLOOR_DEFAULTS,
+  engagementValues,
+  matchesEngagementFloorDrop,
+  resolveEngagementThresholds,
+} from "./engagementFloor.js";
+export type {
+  EngagementThresholds,
+  EngagementValues,
+} from "./engagementFloor.js";
 
 export interface PreFilterStats {
   readonly inputCount: number;
@@ -26,6 +41,7 @@ export interface PreFilterStats {
   readonly duplicateDropped: number;
   readonly normFailDropped: number;
   readonly hnPatternDropped: number;
+  readonly engagementFloorDropped: number;
   readonly outputCount: number;
 }
 
@@ -107,7 +123,7 @@ export function applyPreFilter(
   // HN megathread filter — runs AFTER dedup so duplicates are not double-
   // counted under hnPatternDropped. Only HN-source items are considered.
   const env = opts.env ?? process.env;
-  const kept: RawItem[] = [];
+  const afterPattern: RawItem[] = [];
   let hnPatternDropped = 0;
   for (const item of dedupKept) {
     if (matchesHnDropPattern(item, env)) {
@@ -116,6 +132,26 @@ export function applyPreFilter(
         id: item.id,
         source: item.source,
         title: item.title,
+      });
+    } else {
+      afterPattern.push(item);
+    }
+  }
+
+  // Engagement-floor filter — drops the dead tail of HN/Reddit items that
+  // have neither upvotes nor comments. Items from other sources pass through.
+  const thresholds = resolveEngagementThresholds(env);
+  const kept: RawItem[] = [];
+  let engagementFloorDropped = 0;
+  for (const item of afterPattern) {
+    if (matchesEngagementFloorDrop(item, thresholds)) {
+      engagementFloorDropped += 1;
+      const v = engagementValues(item);
+      log.warn("pre-filter dropped item by engagement floor", {
+        id: item.id,
+        source: item.source,
+        points: v?.points ?? 0,
+        numComments: v?.numComments ?? 0,
       });
     } else {
       kept.push(item);
@@ -131,6 +167,7 @@ export function applyPreFilter(
     duplicateDropped,
     normFailDropped,
     hnPatternDropped,
+    engagementFloorDropped,
     outputCount: kept.length,
   };
 

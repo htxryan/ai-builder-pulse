@@ -263,14 +263,16 @@ describe("renderOrchestratorSummary", () => {
           duplicateDropped: 7,
           normFailDropped: 0,
           hnPatternDropped: 3,
-          outputCount: 201,
+          engagementFloorDropped: 11,
+          outputCount: 190,
         },
       }),
     );
     expect(md).toContain("### Pre-filter");
     expect(md).toContain("| hnPatternDropped | 3 |");
+    expect(md).toContain("| engagementFloorDropped | 11 |");
     expect(md).toContain("| inputCount | 220 |");
-    expect(md).toContain("| outputCount | 201 |");
+    expect(md).toContain("| outputCount | 190 |");
   });
 
   it("Pre-filter section gracefully handles missing stats", () => {

@@ -128,6 +128,7 @@ function renderPreFilterRows(stats: PreFilterStats | undefined): string {
   rows.push(`| duplicateDropped | ${stats.duplicateDropped} |`);
   rows.push(`| normFailDropped | ${stats.normFailDropped} |`);
   rows.push(`| hnPatternDropped | ${stats.hnPatternDropped} |`);
+  rows.push(`| engagementFloorDropped | ${stats.engagementFloorDropped} |`);
   rows.push(`| outputCount | ${stats.outputCount} |`);
   return rows.join("\n") + "\n";
 }
