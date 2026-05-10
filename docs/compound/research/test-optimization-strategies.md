@@ -1,3 +1,9 @@
+---
+title: test-optimization-strategies
+type: note
+permalink: ai-builder-pulse/compound/research/test-optimization-strategies
+---
+
 # Test Optimization Strategies for Agent-Driven Codebases
 
 *2026-02-20*

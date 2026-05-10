@@ -1,3 +1,9 @@
+---
+title: ai-builder-pulse-decomposition
+type: note
+permalink: ai-builder-pulse/specs/ai-builder-pulse-decomposition
+---
+
 # AI Builder Pulse — Phase 3 Decomposition Synthesis
 
 **Prepared:** 2026-04-18

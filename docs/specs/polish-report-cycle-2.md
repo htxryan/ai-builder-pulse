@@ -1,3 +1,9 @@
+---
+title: polish-report-cycle-2
+type: note
+permalink: ai-builder-pulse/specs/polish-report-cycle-2
+---
+
 # Polish Report -- Cycle 2
 
 Generated: 2026-04-18T20:51:09Z
@@ -13,4 +19,3 @@ The message is just "-". Did you mean to send a command or question? Let me know
 ## gemini
 
 (no output -- reviewer may have crashed or timed out)
-

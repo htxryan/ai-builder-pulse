@@ -1,3 +1,9 @@
+---
+title: deepagents-migration-advisory-brief
+type: note
+permalink: ai-builder-pulse/specs/deepagents-migration-advisory-brief
+---
+
 # DeepAgents Migration — Advisory Fleet Brief
 
 **Prepared:** 2026-04-18

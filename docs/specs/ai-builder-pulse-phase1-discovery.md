@@ -1,3 +1,9 @@
+---
+title: ai-builder-pulse-phase1-discovery
+type: note
+permalink: ai-builder-pulse/specs/ai-builder-pulse-phase1-discovery
+---
+
 # AI Builder Pulse — Phase 1 Discovery Brief
 
 **Prepared:** 2026-04-18

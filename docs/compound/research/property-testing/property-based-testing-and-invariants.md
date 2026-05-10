@@ -1,3 +1,9 @@
+---
+title: property-based-testing-and-invariants
+type: note
+permalink: ai-builder-pulse/compound/research/property-testing/property-based-testing-and-invariants
+---
+
 # Property-Based Testing and Invariant-Driven Development
 
 *PhD-Level Survey for Compound Agent Verification Phase*

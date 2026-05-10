@@ -1,3 +1,9 @@
+---
+title: deepagents-migration-phase1
+type: note
+permalink: ai-builder-pulse/specs/deepagents-migration-phase1
+---
+
 # DeepAgents Migration — Phase 1 Discovery
 
 **Prepared:** 2026-04-18

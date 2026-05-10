@@ -1,7 +1,8 @@
 ---
-version: "2.7.2"
-last-updated: "2026-04-17"
-summary: "Complete CLI command reference for compound-agent"
+version: 2.7.2
+last-updated: '2026-04-17'
+summary: Complete CLI command reference for compound-agent
+permalink: ai-builder-pulse/compound/cli-reference
 ---
 
 # CLI Reference

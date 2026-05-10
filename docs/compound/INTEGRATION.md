@@ -1,7 +1,8 @@
 ---
-version: "2.7.2"
-last-updated: "2026-04-17"
-summary: "Memory system, hooks, beads integration, and agent guidance"
+version: 2.7.2
+last-updated: '2026-04-17'
+summary: Memory system, hooks, beads integration, and agent guidance
+permalink: ai-builder-pulse/compound/integration
 ---
 
 # Integration
