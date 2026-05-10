@@ -1,3 +1,9 @@
+---
+title: test-driven-development-methodology
+type: note
+permalink: ai-builder-pulse/compound/research/tdd/test-driven-development-methodology
+---
+
 # Test-Driven Development Methodology
 *PhD-Level Survey for Compound Agent Work Phase*
 

@@ -1,3 +1,9 @@
+---
+title: ai-builder-pulse-advisory-brief
+type: note
+permalink: ai-builder-pulse/specs/ai-builder-pulse-advisory-brief
+---
+
 # AI Builder Pulse — Advisory Fleet Brief
 
 **Prepared:** 2026-04-18

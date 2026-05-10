@@ -1,3 +1,9 @@
+---
+title: deepagents-migration-decomposition
+type: note
+permalink: ai-builder-pulse/specs/deepagents-migration-decomposition
+---
+
 # DeepAgents Migration — Phase 3 Decomposition Synthesis
 
 **Prepared:** 2026-04-19

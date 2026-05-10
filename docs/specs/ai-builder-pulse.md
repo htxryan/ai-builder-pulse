@@ -1,3 +1,9 @@
+---
+title: ai-builder-pulse
+type: note
+permalink: ai-builder-pulse/specs/ai-builder-pulse
+---
+
 # AI Builder Pulse — System Specification
 
 **Status:** Gate-2-approved (revisions R1–R14 applied)

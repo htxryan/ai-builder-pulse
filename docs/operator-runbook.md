@@ -1,3 +1,9 @@
+---
+title: operator-runbook
+type: note
+permalink: ai-builder-pulse/operator-runbook
+---
+
 # Operator runbook
 
 A daily/weekly run finishes with a single **status** value, and usually a

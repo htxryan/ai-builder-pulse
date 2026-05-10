@@ -1,3 +1,9 @@
+---
+title: polish-report-cycle-1
+type: note
+permalink: ai-builder-pulse/specs/polish-report-cycle-1
+---
+
 # Polish Report -- Cycle 1
 
 Generated: 2026-04-18T19:54:04Z
@@ -13,4 +19,3 @@ The user's message is just "-" which doesn't contain a clear request. I'll wait 
 ## gemini
 
 (no output -- reviewer may have crashed or timed out)
-

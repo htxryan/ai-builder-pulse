@@ -99,3 +99,7 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+## Basic Memory
+
+This repository is registered with [Basic Memory](https://docs.basicmemory.com/) under project **`ai-builder-pulse`** (notes in `docs/`). Use the `basic-memory` MCP server (configured at the user level for Claude Code and Codex CLI) to search, read, and write structured notes for this project.

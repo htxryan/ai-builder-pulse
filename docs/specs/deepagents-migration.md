@@ -1,3 +1,9 @@
+---
+title: deepagents-migration
+type: note
+permalink: ai-builder-pulse/specs/deepagents-migration
+---
+
 # DeepAgents Migration — System Specification
 
 **Status:** Gate-2-approved (Path B — hardened 2-tool v1, all P0/P1/P2 revisions applied)

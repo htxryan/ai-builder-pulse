@@ -1,3 +1,9 @@
+---
+title: requirements_engineering
+type: note
+permalink: ai-builder-pulse/compound/research/spec-design/requirements-engineering
+---
+
 # Requirements Engineering as a Discipline
 
 *25 February 2026*

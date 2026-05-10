@@ -1,3 +1,9 @@
+---
+title: core-foundations
+type: note
+permalink: ai-builder-pulse/compound/research/scenario-testing/core-foundations
+---
+
 # Scenario Testing for CS Development: Core Foundations
 *2026-03-07*
 
